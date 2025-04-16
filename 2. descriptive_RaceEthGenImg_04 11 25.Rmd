@@ -1,0 +1,751 @@
+---
+title: "2. descriptive statistics_aim2"
+output: html_notebook
+date: 01/17/25
+---
+# Purpose of code
+To generate descriptive statistics, including Table 1 and Figure 2 for the paper. 
+
+# Loading packages
+```{r packages, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(haven) # inputting data 
+library(tidyverse) # data mgmt
+library(psych) # easy summary statistics
+library(DT) # data tables
+library(tableone) # easy table 1 
+library(kableExtra) # format kable objects 
+library(naniar) # for missingness 
+library(openxlsx) # exporting results 
+library(patchwork) # putting plots together
+library(RColorBrewer) # color palette 
+library(broom) # nice output 
+library(rstatix) # pipeable summary statistics 
+library(emmeans) # adjusted means from ANOVA
+library(ggpubr) # nice plots with pvalues 
+options(max.print=100000) 
+
+# turn off scientific notation
+options(scipen = 999)
+```
+
+# Loading data
+```{r data, include = FALSE}
+# loading all data 
+load("./aim2_final.RData") # n=3840, v=338
+view(names(aim2_final))
+
+# those dementia-free at baseline with any imaging data at v1
+withimg <- aim2_final %>%
+  # excluding those w/ dementia
+  filter(!is.na(cdx_cog) & !cdx_cog == 2) %>% 
+  # including those with PET or MRI data available
+  filter( (hasabv1 == 1) | (hasctv1 == 1) | (haswmhv1 == 1) | (hasmttauv1 == 1) | (hashipp1 == 1)) 
+ # n=3433, v=338 
+
+# those with amyloid pet data at v1
+withabv1 <- withimg %>%
+  filter(hasabv1 == 1) # n=1584, v=338
+
+# those with cortical thickness at v1
+withctv1 <- withimg %>%
+  filter(hasctv1 == 1) # n=2564, v=338
+
+# those with hipp vol at v1
+withhipp1 <- withimg %>%
+  filter(hashipp1 == 1) # n=3108, v=338
+
+# those with wmhv data at v1
+withwmv1 <- withimg %>%
+  filter(haswmhv1 == 1) %>%
+  filter(excludeforwmh == 0) # n=3287, v=338
+
+# those with tau data at v1
+withmttau1 <- withimg %>%
+  filter(hasmttauv1 == 1) # n=914, v=338
+
+# men
+menwithimg<- withimg %>%
+  filter(gender == 0) #n=1261, v=338
+
+# women
+womenwithimg <- withimg %>%
+  filter(gender == 1) # n=2172, v=338
+```
+
+# Table 1, all
+```{r all, include = FALSE}
+vars <- c("agenew",
+          "ethnicity",
+          "gender",
+          "married",
+          "edu",
+          "income",
+          "hasnoinsurance",
+          "sbpavg",
+          "dbpavg",
+          "choltot",
+          "a1c",
+          "smkcur",
+          "apoe4_positivity",
+          "absuvr_1",
+          "taumedtempsuvr_1",
+          "ctmetaroi_1",
+          "hippvolnew_1",
+          "wmhv_1",
+          "icv_1",
+          "lacune_1",
+          "microhem_1")
+
+catvars <- c("ethnicity",
+             "gender",
+             "married",
+             "hasnoinsurance",
+             "smkcur",
+             "apoe4_positivity",
+             "lacune_1",
+             "microhem_1")
+
+nonnormalvars <- c("absuvr_1",
+                   "taumedtempsuvr_1",
+                   "taupostcingsuvr_1",
+                   "taulatparsuvr_1",
+                   "wmhv_1")
+
+table1 <- CreateTableOne(data = withimg,
+                         vars = vars, 
+                         factorVars = catvars)
+table1
+
+print(table1,
+      showAllLevels = TRUE,
+      catDigits = 1,
+      contDigits =1, 
+      test = FALSE,
+      nonnormal = nonnormalvars)
+```
+
+# Table 1, stratified by race/ethnicity and gender 
+```{r table 1 by race and gender, include = FALSE}
+vars_strat <- c("agenew",
+                "married",
+                "edu",
+                "income",
+                "hasnoinsurance",
+                "sbpavg",
+                "dbpavg",
+                "choltot",
+                "a1c",
+                "smkcur",
+                "apoe4_positivity",
+                "absuvr_1",
+                "taumedtempsuvr_1",
+                "ctmetaroi_1",
+                "hippvolnew_1",
+                "wmhv_1",
+                "icv_1",
+                "lacune_1",
+                "microhem_1")
+
+table1_men <- CreateTableOne(data = menwithimg,
+                             vars = vars,
+                             factorVars = catvars,
+                             includeNA = TRUE,
+                             strata = "ethnicity")
+
+table1_men
+
+table1_men_print <- print(table1_men,
+                          showAllLevels = FALSE,
+                          test = FALSE,
+                          nonnormal = nonnormalvars,
+                          noSpaces = TRUE,
+                          quote = FALSE,
+                          printToggle = FALSE,
+                          catDigits = 1,
+                          contDigits = 1)
+table1_men_print
+
+write.csv(table1_men_print,
+          file = "./Results - RaceEthGenImg/Table1Men.csv")
+
+table1_women <- CreateTableOne(data = womenwithimg,
+                               vars = vars,
+                               factorVars = catvars,
+                               includeNA = TRUE,
+                               strata = "ethnicity")
+table1_women
+
+table1_women_print <- print(table1_women,
+                            showAllLevels = FALSE,
+                            test = FALSE,
+                            nonnormal = nonnormalvars,
+                            noSpaces = TRUE,
+                            quote = FALSE,
+                            printToggle = FALSE,
+                            catDigits = 1,
+                            contDigits = 1)
+table1_women_print
+
+write.csv(table1_women_print,
+          file = "./Results - RaceEthGenImg/Table1Women.csv")
+```
+
+# Figure 2: means of imaging markers by gender and race
+```{r figure 2 age-adj, include = FALSE}
+# prepping for ggpubr 
+## pair-wise comparisons 
+my_comparisons <- list( c("White", "Black"), 
+                        c("White", "Hispanic"), 
+                        c("Black", "Hispanic") )
+
+## labels for p-values (if <0.05, then will add ***)
+symnum_args <- list(cutpoints = c(0.01, 0.05, Inf), 
+                    symbols = c("***", "ns"))
+
+# amyloid
+## age-adjusted models
+lm_ab <- lm(absuvr_1 ~ agenew, data = withabv1)
+
+## obtaining adjusted means
+fig_ab <- predict(lm_ab, newdata = withabv1) %>%
+  bind_cols(withabv1$ethnicity,
+            withabv1$gender) %>%
+  rename("adj_mean" = "...1") %>%
+  rename("ethnicity" = "...2") %>%
+  mutate(ethnicity = factor(ethnicity, 
+                            levels = c("White",
+                                       "Black",
+                                       "Hispanic"))) %>% 
+  rename("gender" = "...3") %>%
+  mutate(gender_new = case_when(
+    gender == 0 ~ "Men",
+    gender == 1 ~ "Women"))
+
+## plots
+p_ab <- ggbarplot(fig_ab, x = "ethnicity", y = "adj_mean",
+                  fill = "ethnicity", 
+                  palette = c("#4477AA", "#AA3377", "#228833"),
+                  add = c("mean_sd"),
+                  facet.by = "gender_new") +
+  stat_compare_means(comparisons = my_comparisons,
+                     method = "t.test",
+                     label.y = c(1.1, 1.2, 1.3),
+                     symnum.args = symnum_args) 
+
+p_ab_final <- ggpar(p_ab,
+              main = "Global Amyloid-PET",
+              ylab = "Age-Adjusted Mean SUVR", 
+              xlab = "") +
+  theme_pubr(legend = "none")
+p_ab_final
+
+## cleaning up workspace
+rm(lm_ab, fig_ab, p_ab)
+
+# MTL tau 
+## age-adjusted models
+lm_mttau <- lm(taumedtempsuvr_1 ~ agenew, data = withmttau1)
+
+## obtaining adjusted means
+fig_tau <- predict(lm_mttau, newdata = withmttau1) %>%
+  bind_cols(withmttau1$ethnicity,
+            withmttau1$gender) %>%
+  rename("adj_mean" = "...1") %>%
+  rename("ethnicity" = "...2") %>%
+  rename("gender" = "...3") %>% 
+  mutate(ethnicity = factor(ethnicity, 
+                            levels = c("White",
+                                       "Black",
+                                       "Hispanic"))) %>% 
+  mutate(gender_new = case_when(
+    gender == 0 ~ "Men",
+    gender == 1 ~ "Women"))
+view(fig_tau)
+
+## plots
+p_mttau <- ggbarplot(fig_tau, x = "ethnicity", y = "adj_mean",
+                     fill = "ethnicity", 
+                     palette = c("#4477AA", "#AA3377", "#228833"),
+                     add = c("mean_sd"),
+                     facet.by = "gender_new") +
+  stat_compare_means(comparisons = my_comparisons,,
+                     method = "t.test",
+                     label.y = c(1.2, 1.3, 1.4),
+                     symnum.args = symnum_args) 
+p_mttau
+
+p_mttau_final <- ggpar(p_mttau,
+                       main = "Medial Temporal Lobe Tau-PET",
+                       ylab = "Age-Adjusted Mean SUVR", 
+                       xlab = "") +
+  theme_pubr(legend = "none")
+p_mttau_final
+
+## cleaning up workspace
+rm(lm_mttau, fig_mttau, p_mttau)
+
+## all PET measures 
+p_pet <- p_ab_final + p_mttau_final
+
+# AD ROI cortical thickness 
+## age-adjusted models
+lm_ct <- lm(ctmetaroi_1 ~ agenew, data = withctv1)
+
+## obtaining adjusted means
+fig_ct <- predict(lm_ct, newdata = withctv1) %>%
+  bind_cols(withctv1$ethnicity,
+            withctv1$gender) %>%
+  rename("adj_mean" = "...1") %>%
+  rename("ethnicity" = "...2") %>%
+  rename("gender" = "...3") %>%
+  mutate(ethnicity = factor(ethnicity, 
+                            levels = c("White",
+                                       "Black",
+                                       "Hispanic"))) %>% 
+  mutate(gender_new = case_when(
+    gender == 0 ~ "Men",
+    gender == 1 ~ "Women"))
+view(fig_tau)
+
+## plots
+p_ct <- ggbarplot(fig_ct, x = "ethnicity", y = "adj_mean",
+                  fill = "ethnicity", 
+                  palette = c("#4477AA", "#AA3377", "#228833"),
+                  add = c("mean_sd"),
+                  facet.by = "gender_new") +
+  stat_compare_means(comparisons = my_comparisons,
+                     method = "t.test",
+                     label.y = c(2.9, 3.1, 3.3),
+                     symnum.args = symnum_args) 
+p_ct
+
+p_ct_final <- ggpar(p_ct,
+                    main = "AD Meta-ROI Cortical Thickness",
+                    ylab = "Age-Adjusted Mean (mm)",
+                    xlab = "",
+                    legend = "None") +
+  theme_pubr(legend = "none")
+p_ct_final
+
+## cleaning up workspace
+rm(lm_ct, fig_ct, p_ct)
+
+# hippocampal volume 
+## age-adjusted models
+lm_hipp <- lm(hippvolnew_1 ~ agenew, data = withhipp1)
+
+## obtaining adjusted means
+fig_hipp <- predict(lm_hipp, newdata = withhipp1) %>%
+  bind_cols(withhipp1$ethnicity,
+            withhipp1$gender) %>%
+  rename("adj_mean" = "...1") %>%
+  rename("ethnicity" = "...2") %>%
+  rename("gender" = "...3") %>%
+  mutate(ethnicity = factor(ethnicity, 
+                            levels = c("White",
+                                       "Black",
+                                       "Hispanic"))) %>% 
+  mutate(gender_new = case_when(
+    gender == 0 ~ "Men",
+    gender == 1 ~ "Women"))
+view(fig_hipp)
+
+## plots
+p_hipp <- ggbarplot(fig_hipp, x = "ethnicity", y = "adj_mean",
+                    fill = "ethnicity", 
+                    palette = c("#4477AA", "#AA3377", "#228833"),
+                    add = c("mean_sd"),
+                    facet.by = "gender_new") +
+  stat_compare_means(comparisons = my_comparisons,
+                     method = "t.test",
+                     label.y = c(6750, 7250, 7750),
+                     symnum.args = symnum_args) 
+p_hipp
+
+p_hipp_final <- ggpar(p_hipp,
+                      main = "Hippocampal Volume",
+                      ylab = bquote("Age-Adjusted Mean"~(cm^3)),
+                      xlab = "",
+                      legend = "None") +
+  theme_pubr(legend = "none")
+p_hipp_final
+
+## cleaning up workspace
+rm(lm_hipp, fig_hipp, p_hipp)
+
+# log_wmhv 
+## age-adjusted models
+lm_logwmhv <- lm(logwmhv1 ~ agenew, data = withwmv1)
+
+## obtaining adjusted means
+fig_logwmhv <- predict(lm_logwmhv, newdata = withwmv1) %>%
+  bind_cols(withwmv1$ethnicity,
+            withwmv1$gender) %>%
+  rename("adj_mean" = "...1") %>%
+  rename("ethnicity" = "...2") %>%
+  rename("gender" = "...3") %>%
+  mutate(ethnicity = factor(ethnicity, 
+                            levels = c("White",
+                                       "Black",
+                                       "Hispanic"))) %>% 
+  mutate(gender_new = case_when(
+    gender == 0 ~ "Men",
+    gender == 1 ~ "Women"))
+view(fig_logwmhv)
+
+## plots
+p_logwmhv <- ggbarplot(fig_logwmhv, x = "ethnicity", y = "adj_mean",
+                       fill = "ethnicity",
+                       palette = c("#4477AA", "#AA3377", "#228833"),
+                       add = c("mean_sd"),
+                       facet.by = "gender_new",
+                       legend = "none") +
+  stat_compare_means(comparisons = my_comparisons,
+                     method = "t.test",
+                     label.y = c(1.1, 1.2, 1.3),
+                     symnum.args = symnum_args,
+                     tip.length = 0.005) 
+p_logwmhv
+
+p_logwmhv_final <- ggpar(p_logwmhv,
+                         main = "Log-Transformed WMHV",
+                         ylab = bquote("Age-Adjusted Mean"~(log-cm^3)),
+                         xlab = "") +
+  theme_pubr(legend = "none")
+p_logwmhv_final
+
+## cleaning up workspace
+rm(lm_logwmhv, fig_logwmhv, p_logwmhv)
+
+## lacunes
+menwithwmhv <- withwmv1 %>% filter(gender == 0) # n=1205
+womenwithwmhv <- withwmv1 %>% filter(gender == 1) # n=2082
+
+figure_lac <- withwmv1 %>%
+  group_by(ethnicity, gender, lacune_1) %>%
+  tally() %>%
+  spread(lacune_1, n)  %>% 
+  mutate(gender = case_when(
+    gender == 0 ~ "Men",
+    gender == 1 ~ "Women")) %>%
+  mutate(ethnicity = factor(ethnicity, 
+                            levels = c("White",
+                                       "Black",
+                                       "Hispanic"))) %>%
+  rename("n" = "1") %>% 
+  select(-c("0", "<NA>")) %>% view()
+
+chisq.test(table(menwithwmhv$lacune_1, menwithwmhv$ethnicity)) # p=0.0000008763
+chisq.test(table(womenwithwmhv$lacune_1, womenwithwmhv$ethnicity)) # p=0.000005089
+
+plot_lacunes <- ggplot(figure_lac,
+                       aes(x = factor(ethnicity),
+                           y = n,
+                           fill = factor(ethnicity))) +
+  geom_col(position = position_dodge(),
+           color = "black") +
+  facet_wrap(.~factor(gender)) + 
+  ggtitle("Lacunar Infarcts Present") +
+  labs(y = "Number of Participants", 
+       x = "",
+       fill = "Race/Ethnicity") + 
+  scale_fill_manual(values=c("#4477AA", "#AA3377", "#228833")) + 
+  theme_classic(base_size=10) +
+  theme(plot.title = element_text(size = 12),
+        legend.position = "none",
+        strip.background.x = element_rect(fill="#F2F2F3"))  +
+  annotate("text", x = 2.5, y = 20, 
+           label = "Chi-square p<0.05",
+           fontface = 'italic')
+plot_lacunes
+
+## cleaning up workspace
+rm(figure_lac)
+
+## microhem
+figure_mb <- withwmv1 %>%
+  group_by(ethnicity, gender, microhem_1) %>%
+  tally() %>%
+  spread(microhem_1, n) %>% 
+  mutate(gender = case_when(
+    gender == 0 ~ "Men",
+    gender == 1 ~ "Women")) %>%
+  mutate(ethnicity = factor(ethnicity, 
+                            levels = c("White",
+                                       "Black",
+                                       "Hispanic"))) %>%
+  rename("n" = "1") %>% 
+  select(-c("0", "<NA>")) %>% view()
+
+chisq.test(table(menwithwmhv$microhem_1, menwithwmhv$ethnicity)) # p=0.000000000000792
+chisq.test(table(womenwithwmhv$microhem_1, womenwithwmhv$ethnicity)) # p=0.0000000000001113
+
+plot_mb <- ggplot(figure_mb,
+                  aes(x = factor(ethnicity),
+                      y = n,
+                      fill = factor(ethnicity))) +
+  geom_col(position = position_dodge(),
+           color = "black") +
+  facet_wrap(.~factor(gender)) + 
+  ggtitle("Microbleeds Present") +
+  labs(y = "Number of Participants", 
+       x = "",
+       fill = "Race/Ethnicity") + 
+  scale_fill_manual(values=c("#4477AA", "#AA3377", "#228833")) + 
+  theme_classic(base_size=10) +
+  theme(plot.title = element_text(size = 12),
+        legend.position = "none",
+        strip.background.x = element_rect(fill="#F2F2F3")) +
+  annotate("text", x = 2.5, y = 60, 
+           label = "Chi-square p<0.05",
+           fontface = 'italic')
+plot_mb
+
+## cleaning up workspace
+rm(figure_mb)
+
+# patching plots together
+p_pet <- (p_ab_final + p_mttau_final) 
+p_mri_nd <- (p_ct_final + p_hipp_final)
+p_svd <- (p_logwmhv_final | 
+            (plot_lacunes / plot_mb)) + 
+  theme(legend.position = "none") 
+
+## save each separate panel since the images got bigger 
+
+```
+# Supplemental table 1: by avail of imaging
+```{r supp table 1, include = FALSE}
+# dementia free
+demfree <- aim2_final %>%
+  filter(!is.na(cdx_cog) & !cdx_cog == 2) # n=3592, v=338
+
+table1_demfree <- CreateTableOne(data = demfree,
+                                 vars = vars,
+                                 factorVars = catvars)
+table1_demfree
+
+table1_demfree <- print(table1_demfree,
+                       showAllLevels = FALSE,
+                       test = FALSE,
+                       nonnormal = nonnormalvars,
+                       noSpaces = TRUE,
+                       quote = FALSE,
+                       printToggle = FALSE,
+                       catDigits = 1,
+                       contDigits = 1) %>%
+  as.data.frame() %>% view()
+
+st1_wb <- createWorkbook()
+addWorksheet(st1_wb, sheetName = "demfree")
+writeDataTable(st1_wb,
+               sheet = "demfree",
+               x = table1_demfree,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(st1_wb,
+             "./Results - RaceEthGenImg/supp table 1.xlsx",
+             overwrite = TRUE)
+
+rm(table1_demfree)
+
+# With and without imaging
+withimg_u <- aim2_final %>%
+  filter(!is.na(cdx_cog) & !cdx_cog == 2) %>% # excluding those w/ dementia
+  mutate(hasimg = case_when(
+    (hasabv1 == 1) | (hasctv1 == 1) | (haswmhv1 == 1) | (hasmttauv1 == 1) | (hashipp1 == 1) ~ 1,
+    TRUE ~ 0)) # n=3592, v=338
+summary(as.factor(withimg_u$hasimg)) # n=3433
+
+table1_wwoimg <- CreateTableOne(data = withimg_u,
+                                vars = vars,
+                                factorVars = catvars,
+                                includeNA = TRUE,
+                                strata = "hasimg")
+
+table1_wwoimg <- print(table1_wwoimg,
+                       showAllLevels = FALSE,
+                       test = FALSE,
+                       nonnormal = nonnormalvars,
+                       noSpaces = TRUE,
+                       quote = FALSE,
+                       printToggle = FALSE,
+                       catDigits = 1,
+                       contDigits = 1) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(st1_wb, sheetName = "wwoimg")
+writeDataTable(st1_wb,
+               sheet = "wwoimg",
+               x = table1_wwoimg,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(st1_wb,
+             "./Results - RaceEthGenImg/supp table 1.xlsx",
+             overwrite = TRUE)
+
+rm(table1_wwoimg)
+
+# With and without amyloid
+table1_wwoamyloid <- CreateTableOne(data = demfree,
+                                    vars = vars,
+                                    factorVars = catvars,
+                                    strata = "hasabv1")
+
+table1_wwoamyloid <- print(table1_wwoamyloid,
+                           showAllLevels = FALSE,
+                           test = FALSE,
+                           nonnormal = nonnormalvars,
+                           noSpaces = TRUE,
+                           quote = FALSE,
+                           printToggle = FALSE,
+                           catDigits = 1,
+                           contDigits = 1) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(st1_wb, sheetName = "wwoamyloid")
+writeDataTable(st1_wb,
+               sheet = "wwoamyloid",
+               x = table1_wwoamyloid,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(st1_wb,
+             "./Results - RaceEthGenImg/supp table 1.xlsx",
+             overwrite = TRUE)
+rm(table1_wwoamyloid)
+
+# With and without tau
+table1_wwomttau <- CreateTableOne(data = demfree,
+                                  vars = vars,
+                                  factorVars = catvars,
+                                  strata = "hasmttauv1")
+
+table1_wwomttau <- print(table1_wwomttau,
+                         showAllLevels = FALSE,
+                         test = FALSE,
+                         nonnormal = nonnormalvars,
+                         noSpaces = TRUE,
+                         quote = FALSE,
+                         printToggle = FALSE,
+                         catDigits = 1,
+                         contDigits = 1) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(st1_wb, sheetName = "wwomttau")
+writeDataTable(st1_wb,
+               sheet = "wwomttau",
+               x = table1_wwomttau,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(st1_wb,
+             "./Results - RaceEthGenImg/supp table 1.xlsx",
+             overwrite = TRUE)
+rm(table1_wwomttau)
+
+# With and without cortical thickness
+table1_wwoct <- CreateTableOne(data = demfree,
+                               vars = vars,
+                               factorVars = catvars,
+                               strata = "hasctv1")
+
+table1_wwoct <- print(table1_wwoct,
+                      showAllLevels = FALSE,
+                      test = FALSE,
+                      nonnormal = nonnormalvars,
+                      noSpaces = TRUE,
+                      quote = FALSE,
+                      printToggle = FALSE,
+                      catDigits = 1,
+                      contDigits = 1) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(st1_wb, sheetName = "wwoct")
+writeDataTable(st1_wb,
+               sheet = "wwoct",
+               x = table1_wwoct,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(st1_wb,
+             "./Results - RaceEthGenImg/supp table 1.xlsx",
+             overwrite = TRUE)
+rm(table1_wwoct)
+
+# With and without hippocampal volume
+table1_wwohipp <- CreateTableOne(data = demfree,
+                                 vars = vars,
+                                 factorVars = catvars,
+                                 strata = "hashipp1")
+
+table1_wwohipp <- print(table1_wwohipp,
+                        showAllLevels = FALSE,
+                        test = FALSE,
+                        nonnormal = nonnormalvars,
+                        noSpaces = TRUE,
+                        quote = FALSE,
+                        printToggle = FALSE,
+                        catDigits = 1,
+                        contDigits = 1) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(st1_wb, sheetName = "wwohipp")
+writeDataTable(st1_wb,
+               sheet = "wwohipp",
+               x = table1_wwohipp,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(st1_wb,
+             "./Results - RaceEthGenImg/supp table 1.xlsx",
+             overwrite = TRUE)
+rm(table1_wwohipp)
+
+# With and without WMHV
+table1_wwowmhv <- CreateTableOne(data = demfree,
+                                 vars = vars,
+                                 factorVars = catvars,
+                                 strata = "haswmhv1")
+
+table1_wwowmhv <- print(table1_wwowmhv,
+                        showAllLevels = FALSE,
+                        test = FALSE,
+                        nonnormal = nonnormalvars,
+                        noSpaces = TRUE,
+                        quote = FALSE,
+                        printToggle = FALSE,
+                        catDigits = 1,
+                        contDigits = 1) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(st1_wb, sheetName = "wwowmhv")
+writeDataTable(st1_wb,
+               sheet = "wwowmhv",
+               x = table1_wwowmhv,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(st1_wb,
+             "./Results - RaceEthGenImg/supp table 1.xlsx",
+             overwrite = TRUE)
+rm(table1_wwowmhv)
+
+```
+
+
+
+
+
+

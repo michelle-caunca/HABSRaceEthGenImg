@@ -1,0 +1,371 @@
+---
+title: "4b. supp_RaceEthGenImg_IPSW_02 14 25"
+output: html_document
+date: "2025-02-14"
+---
+# Purpose of code
+To re-weight the models for PET outcomes for selection into the PET subsample. 
+
+# Loading packages
+```{r packagenews, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(haven) # inputting data 
+library(tidyverse) # data mgmt
+library(psych) # easy summary statistics
+library(DT) # data tables
+library(tableone) # easy table 1 
+library(kableExtra) # format kable objects 
+library(naniar) # for missingness 
+library(openxlsx) # excel for outputting results 
+library(survey) # survey glm
+library(broom) # making output more readable 
+options(max.print=100000)
+
+# turn off scientific notation
+options(scipen = 999)
+```
+# Loading data
+```{r data, include = FALSE}
+load("./aim2_final.RData") # n=3840, v=338
+view(names(aim2_final_frs))
+
+# those dementia-free at baseline with any imaging data at v1
+withimg <- aim2_final %>%
+  filter(!is.na(cdx_cog) & !cdx_cog == 2) %>% # excluding those w/ dementia
+  filter( (hasabv1 == 1) | (hasctv1 == 1) | (haswmhv1 == 1) | (hasmttauv1 == 1) | (hashipp1 == 1)) 
+ # n=3433, v=338 
+
+# how many people are in amyloid subsample?
+summary(as.factor(withimg$hasabv1)) # 1849 excluded
+
+# how many people are in tau subsample?
+summary(as.factor(withimg$hasmttauv1)) # 2519 excluded
+```
+# Creating excel sheet for results
+```{r amyloid excel, include = FALSE}
+# if starting over and re-running all models, run this
+ipw_wb <- createWorkbook()
+
+# if coming back to analysis, run this
+ipw_wb <- loadWorkbook("./Results - RaceEthGenImg/ipw.xlsx")
+```
+# Creating weights
+Creating stabilized IPW weights for selection into the amyloid and tau subsamples. Will not include covariates here and just include in the main models so that we can keep the weights as simple as possible.
+```{r create ipw, include = FALSE}
+# amyloid subsample
+## denominator model
+den_fit_ab <- glm(hasabv1 ~ 
+                    agenew +
+                    as.factor(ethnicity) +
+                    as.factor(gender),
+                  family = binomial(link = "logit"),
+                  data = withimg)
+summary(den_fit_ab)
+
+## numerator model
+num_fit_ab <- glm(hasabv1 ~ 1,
+                  family = binomial(link = "logit"),
+                  data = withimg)
+summary(num_fit_ab)
+
+## denominator propensities
+den_pred_ab <- predict(den_fit_ab, type = "response")
+summary(den_pred_ab)
+
+## numerator propensities
+num_pred_ab <- predict(num_fit_ab, type = "response")
+summary(num_pred_ab)
+
+## creating weights 
+sw_ab <- ifelse(withimg$hasabv1 == 1, 
+                num_pred_ab/den_pred_ab, # weights for those in the sample
+                (1-num_pred_ab)/(1-den_pred_ab)) # weights for those not in the sample
+
+# tau subsample
+## denominator model
+den_fit_tau <- glm(hasmttauv1 ~ 
+                     agenew +
+                     as.factor(ethnicity) +
+                     as.factor(gender),
+                   family = binomial(link = "logit"),
+                   data = withimg)
+summary(den_fit_tau)
+
+## numerator model
+num_fit_tau <- glm(hasmttauv1 ~ 1,
+                   family = binomial(link = "logit"),
+                   data = withimg)
+summary(num_fit_tau)
+
+## denominator propensities
+den_pred_tau <- predict(den_fit_tau, type = "response")
+summary(den_pred_tau)
+
+## numerator propensities
+num_pred_tau <- predict(num_fit_tau, type = "response")
+summary(num_pred_tau)
+
+## creating weights 
+sw_tau <- ifelse(withimg$hasmttauv1 == 1, 
+                 num_pred_tau/den_pred_tau, # weights for those in the sample
+                 (1-num_pred_tau)/(1-den_pred_tau)) # weights for those not in the sample
+summary(sw_tau) 
+
+# adding weights to dataset
+withimg_sw <- bind_cols(withimg, 
+                        sw_amyloid = sw_ab, 
+                        sw_mttau = sw_tau) # n=3433, v=62
+view(names(withimg_sw))
+
+## checking weights
+describeBy(withimg_sw$sw_amyloid, withimg_sw$hasabv1)
+describeBy(withimg_sw$sw_mttau, withimg_sw$hasmttauv1)
+```
+# Creating gender stratified datasets
+```{r gen strat data, include = FALSE}
+# men
+menwithimg_sw <- withimg_sw %>%
+  filter(gender == 0) #n=1261, v=362
+
+# women
+womenwithimg_sw <- withimg_sw %>%
+  filter(gender == 1) # n=2172, v=362
+```
+# Running analyses with weights 
+## Amyloid
+```{r amyloid ipw, include = FALSE}
+design_ab <- svydesign(ids=~1, weights=~sw_amyloid, data=withimg_sw)
+
+# Model 2 with interaction terms
+amyloid_ipw <- svyglm(scale(absuvr_1) ~
+                        as.factor(ethnicity) +
+                        as.factor(gender) +
+                        as.factor(ethnicity)*as.factor(gender) +
+                        as.factor(abscanner_1) +
+                        agenew + 
+                        as.factor(married) +
+                        edu + 
+                        income + 
+                        as.factor(hasnoinsurance) +
+                        sbpavg +
+                        dbpavg + 
+                        choltot + 
+                        a1c + 
+                        as.factor(smkcur) +
+                        as.factor(apoe4_positivity),
+                   data = withimg_sw,
+                   design = design_ab)
+summary(amyloid_ipw)
+
+## outputting results
+amyloid_ipw_est <- cbind(coef = coef(amyloid_ipw),
+                         confint(amyloid_ipw, level = 0.95),
+                         pvalue = summary(amyloid_ipw)$coefficients[,4]) %>% 
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(ipw_wb, sheetName = "amyloid ipw")
+writeDataTable(ipw_wb,
+               sheet = "amyloid ipw",
+               x = amyloid_ipw_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(ipw_wb,
+             "./Results - RaceEthGenImg/ipw.xlsx",
+             overwrite = TRUE)
+
+## Model 2 stratified by gender 
+## men
+design_men_ab <- svydesign(ids=~1, weights=~sw_amyloid, data=menwithimg_sw)
+amyloid_men_ipw <- svyglm(scale(absuvr_1) ~
+                            as.factor(ethnicity) +
+                            as.factor(abscanner_1) +
+                            agenew + 
+                            as.factor(married) +
+                            edu + 
+                            income + 
+                            as.factor(hasnoinsurance) +
+                            sbpavg +
+                            dbpavg + 
+                            choltot + 
+                            a1c + 
+                            as.factor(smkcur) +
+                            as.factor(apoe4_positivity),
+                          data = menwithimg_sw,
+                          design = design_men_ab)
+summary(amyloid_men_ipw)
+
+## outputting results
+amyloid_men_ipw_est <- cbind(coef = coef(amyloid_men_ipw),
+                             confint(amyloid_men_ipw, level = 0.95), 
+                             pvalue = summary(amyloid_men_ipw)$coefficients[,4]) %>% 
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(ipw_wb, sheetName = "amyloid ipw men")
+writeDataTable(ipw_wb,
+               sheet = "amyloid ipw men",
+               x = amyloid_men_ipw_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## women
+design_women_ab <- svydesign(ids=~1, weights=~sw_amyloid, data=womenwithimg_sw)
+amyloid_women_ipw <- svyglm(scale(absuvr_1) ~
+                              as.factor(ethnicity) +
+                              as.factor(abscanner_1) +
+                              agenew + 
+                              as.factor(married) +
+                              edu + 
+                              income + 
+                              as.factor(hasnoinsurance) +
+                              sbpavg +
+                              dbpavg + 
+                              choltot + 
+                              a1c + 
+                              as.factor(smkcur) +
+                              as.factor(apoe4_positivity),
+                          data = womenwithimg_sw,
+                          design = design_women_ab)
+summary(amyloid_women_ipw)
+
+## outputting results
+amyloid_women_ipw_est <- cbind(coef = coef(amyloid_women_ipw),
+                               confint(amyloid_women_ipw, level = 0.95),
+                               pvalue = summary(amyloid_women_ipw)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(ipw_wb, sheetName = "amyloid ipw women")
+writeDataTable(ipw_wb,
+               sheet = "amyloid ipw women",
+               x = amyloid_women_ipw_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(ipw_wb,
+             "./Results - RaceEthGenImg/ipw.xlsx",
+             overwrite = TRUE)
+```
+## Tau
+```{r tau ipw, include = FALSE}
+# Model 2 with interaction terms
+design_tau <- svydesign(ids=~1, weights=~sw_mttau, data=withimg_sw)
+
+mttau_ipw <- svyglm(scale(taumedtempsuvr_1) ~
+                      as.factor(ethnicity) +
+                      as.factor(gender) +
+                      as.factor(ethnicity)*as.factor(gender) +
+                      agenew + 
+                      as.factor(married) +
+                      edu + 
+                      income + 
+                      as.factor(hasnoinsurance) +
+                      sbpavg +
+                      dbpavg + 
+                      choltot + 
+                      a1c + 
+                      as.factor(smkcur) +
+                      as.factor(apoe4_positivity),
+                    data = withimg_sw,
+                    design = design_tau)
+summary(mttau_ipw)
+
+## outputting results
+mttau_ipw_est <- cbind(coef = coef(mttau_ipw),
+                       confint(mttau_ipw, level = 0.95),
+                       pvalue = summary(mttau_ipw)$coefficients[,4]) %>% 
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(ipw_wb, sheetName = "mttau ipw")
+writeDataTable(ipw_wb,
+               sheet = "mttau ipw",
+               x = mttau_ipw_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(ipw_wb,
+             "./Results - RaceEthGenImg/ipw.xlsx",
+             overwrite = TRUE)
+
+## Model 2 stratified by gender 
+## men
+design_men_tau <- svydesign(ids=~1, weights=~sw_mttau, data=menwithimg_sw)
+
+mttau_men_ipw <- svyglm(scale(taumedtempsuvr_1) ~
+                          as.factor(ethnicity) +
+                          agenew +
+                          as.factor(married) +
+                          edu + 
+                          income + 
+                          as.factor(hasnoinsurance) +
+                          sbpavg +
+                          dbpavg +
+                          choltot +
+                          a1c + 
+                          as.factor(smkcur) +
+                          as.factor(apoe4_positivity),
+                        data = menwithimg_sw,
+                        design = design_men_tau)
+summary(mttau_men_ipw)
+
+## outputting results
+mttau_men_ipw_est <- cbind(coef = coef(mttau_men_ipw),
+                           confint(mttau_men_ipw, level = 0.95), 
+                           pvalue = summary(mttau_men_ipw)$coefficients[,4]) %>% 
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(ipw_wb, sheetName = "mttau ipw men")
+writeDataTable(ipw_wb,
+               sheet = "mttau ipw men",
+               x = mttau_men_ipw_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## women
+design_women_tau <- svydesign(ids=~1, weights=~sw_mttau, data=womenwithimg_sw)
+mttau_women_ipw <- svyglm(scale(taumedtempsuvr_1) ~
+                            as.factor(ethnicity) +
+                            agenew + 
+                            as.factor(married) +
+                            edu + 
+                            income + 
+                            as.factor(hasnoinsurance) +
+                            sbpavg +
+                            dbpavg + 
+                            choltot + 
+                            a1c + 
+                            as.factor(smkcur) +
+                            as.factor(apoe4_positivity),
+                          data = womenwithimg_sw,
+                          design = design_women_tau)
+summary(mttau_women_ipw)
+
+
+## outputting results
+mttau_women_ipw_est <- cbind(coef = coef(mttau_women_ipw),
+                             confint(mttau_women_ipw, level = 0.95),
+                             pvalue = summary(mttau_women_ipw)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(ipw_wb, sheetName = "mttau ipw women")
+writeDataTable(ipw_wb,
+               sheet = "mttau ipw women",
+               x = mttau_women_ipw_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(ipw_wb,
+             "./Results - RaceEthGenImg/ipw.xlsx",
+             overwrite = TRUE)
+```
+

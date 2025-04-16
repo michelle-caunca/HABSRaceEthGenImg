@@ -1,0 +1,939 @@
+---
+title: "4a. supp_RaceEthGenImg_woMCI_02 12 25"
+output: html_document
+date: "2025-02-13"
+---
+# Purpose of code
+To run main models excluding those with MCI as a sensitivity analysis. 
+
+# Loading packages
+```{r packagenews, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(haven) # inputting data 
+library(tidyverse) # data mgmt
+library(psych) # easy summary statistics
+library(DT) # data tables
+library(tableone) # easy table 1 
+library(kableExtra) # format kable objects 
+library(naniar) # for missingness 
+library(nnet) # multinomial regression
+library(openxlsx) # excel for outputting results 
+library(patchwork) # putting plots together
+library(RColorBrewer) # color pallettes
+options(max.print=100000)
+
+# turn off scientific notation
+options(scipen = 999)
+```
+# Loading data
+```{r data, include = FALSE}
+load("./aim2_final.RData") # n=3840, v=338
+view(names(aim2_final))
+
+# those MCI- and dementia-free at baseline with any imaging data at v1
+withimg_nl <- aim2_final %>%
+  filter(!is.na(cdx_cog) & cdx_cog == 0) %>% # excluding those w/ MCI and dementia, only cog normal people
+  filter( (hasabv1 == 1) | (hasctv1 == 1) | (haswmhv1 == 1) | (hasmttauv1 == 1) | (hashipp1 == 1)) 
+ # n=2670, v=338 
+
+# those with amyloid pet data at v1
+withabv1_nl <- withimg_nl %>%
+  filter(hasabv1 == 1) # n=1584, v=338
+
+# those with tau data at v1
+withmttau1_nl <- withimg_nl %>%
+  filter(hasmttauv1 == 1) # n=650, v=338
+
+# those with cortical thickness at v1
+withctv1_nl <- withimg_nl %>%
+  filter(hasctv1 == 1) # n=3032, v=338
+
+# those with hipp vol at v1
+withhipp1_nl <- withimg_nl %>%
+  filter(hashipp1 == 1) # n=2426, v=338
+
+# those with wmhv data at v1
+withwmhv1_nl <- withimg_nl %>%
+  filter(haswmhv1 == 1) %>%
+  filter(excludeforwmh == 0) # n=2582, v=338
+
+# those with lacunar infarcts at v1
+withlac1_nl <- withimg_nl %>%
+  filter(!is.na(lacune_1)) # n=2634, v=338
+
+# those with microbleeds at v1
+withmb1_nl <- withimg_nl %>%
+  filter(!is.na(microhem_1)) # n=2634, v=338
+
+# men
+menwithimg_nl <- withimg_nl %>%
+  filter(gender == 0) #n=902, v=338
+
+# women
+womenwithimg_nl <- withimg_nl %>%
+  filter(gender == 1) # n=1768, v=338
+
+```
+## Creating excel sheet for results
+```{r amyloid excel, include = FALSE}
+# if starting over and re-running all models, run this
+cognl_wb <- createWorkbook()
+
+# if coming back to analysis, run this
+cognl_wb <- loadWorkbook("./Results - RaceEthGenImg/cognl.xlsx")
+```
+
+# Models for amyloid deposition 
+## Creating gender stratified datasets
+```{r amyloid strat data, include = FALSE}
+menwithabv_nl <- withabv1_nl %>% filter(gender == 0) # n=356
+womenwithabv_nl <- withabv1_nl %>% filter(gender == 1) # n=790
+```
+## Model 2 with interaction term
+```{r amyloid model 2 with intx, include = FALSE}
+model2_amyloid_nl <- lm(scale(absuvr_1) ~
+                          as.factor(ethnicity) +
+                          as.factor(gender) +
+                          as.factor(ethnicity)*as.factor(gender) +
+                          as.factor(abscanner_1) +
+                          agenew + 
+                          as.factor(married) +
+                          edu + 
+                          income + 
+                          as.factor(hasnoinsurance) +
+                          sbpavg +
+                          dbpavg + 
+                          choltot + 
+                          a1c + 
+                          as.factor(smkcur) +
+                          as.factor(apoe4_positivity),
+                     data = withabv1_nl)
+summary(model2_amyloid_nl)
+
+## outputting results
+model2_amyloid_nl_est <- cbind(coef = coef(model2_amyloid_nl),
+                            confint(model2_amyloid_nl, level = 0.95),
+                            pvalue = summary(model2_amyloid_nl)$coefficients[,4]) %>% 
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "amyloid")
+writeDataTable(cognl_wb,
+               sheet = "amyloid",
+               x = model2_amyloid_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+```
+## Model 2 stratified by gender
+```{r amyloid model 2 by gender}
+## men
+model2men_amyloid_nl <- lm(scale(absuvr_1) ~
+                          as.factor(ethnicity) +
+                          as.factor(abscanner_1) +
+                          agenew +
+                          edu + 
+                          income + 
+                          as.factor(hasnoinsurance) + 
+                          as.factor(married) +
+                          sbpavg +
+                          dbpavg + 
+                          choltot + 
+                          a1c + 
+                          as.factor(smkcur) +
+                          as.factor(apoe4_positivity),
+                        data = menwithabv_nl)
+summary(model2men_amyloid_nl)
+
+## outputting results
+model2men_amyloid_nl_est <- cbind(coef = coef(model2men_amyloid_nl),
+                               confint(model2men_amyloid_nl, level = 0.95), 
+                               pvalue = summary(model2men_amyloid_nl)$coefficients[,4]) %>% 
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "amyloid men")
+writeDataTable(cognl_wb,
+               sheet = "amyloid men",
+               x = model2men_amyloid_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## women
+model2women_amyloid_nl <- lm(scale(absuvr_1) ~
+                            as.factor(ethnicity) +
+                            as.factor(abscanner_1) +
+                            agenew +
+                            edu +
+                            income +
+                            as.factor(hasnoinsurance) +
+                            as.factor(married) +
+                            sbpavg +
+                            dbpavg + 
+                            choltot + 
+                            a1c + 
+                            as.factor(smkcur) +
+                          as.factor(apoe4_positivity),
+                          data = womenwithabv_nl)
+summary(model2women_amyloid_nl)
+
+## outputting results
+model2women_amyloid_nl_est <- cbind(coef = coef(model2women_amyloid_nl),
+                                 confint(model2women_amyloid_nl, level = 0.95),
+                                 pvalue = summary(model2women_amyloid_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "amyloid women")
+writeDataTable(cognl_wb,
+               sheet = "amyloid women",
+               x = model2women_amyloid_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+```
+```{r amyloid clean, include = FALSE}
+## cleaning up workspace
+rm(model2_amyloid_nl, model2_amyloid_nl_est,
+   model2men_amyloid_nl, model2men_amyloid_nl_est,
+   model2women_amyloid_nl, model2women_amyloid_nl_est,
+   menwithabv_nl, womenwithabv_nl)
+```
+# Models for tau medial temporal deposition 
+Note that participants were scanned with the same scanner, so adding that variable is not needed. 
+
+## Creating gender stratified datasets
+```{r mttau strat, include = FALSE}
+menwithmttau_nl <- withmttau1_nl %>% filter(gender == 0) # n=222
+womenwithmttau_nl <- withmttau1_nl %>% filter(gender == 1) # n=428
+```
+## Model 2 with interaction term
+```{r mttau model 2 with intx, include = FALSE}
+# Model 2: Model 1 + SBP + DBP + total chol + a1c + current smoker 
+model2_mttau_nl <- lm(scale(taumedtempsuvr_1) ~
+                        as.factor(ethnicity) +
+                        as.factor(gender) +
+                        as.factor(ethnicity)*as.factor(gender) +
+                        agenew + 
+                        as.factor(married) +
+                        edu + 
+                        income + 
+                        as.factor(hasnoinsurance) +
+                        sbpavg +
+                        dbpavg + 
+                        choltot + 
+                        a1c + 
+                        as.factor(smkcur) +
+                        as.factor(apoe4_positivity),
+                   #as.factor(tauscanner_1), did not include as participants here were scanned with the same scanner
+                   data = withmttau1_nl)
+summary(model2_mttau_nl)
+
+## outputting results
+model2_mttau_nl_est <- cbind(coef = coef(model2_mttau_nl),
+                          confint(model2_mttau_nl, level = 0.95), 
+                          pvalue = summary(model2_mttau_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "mttau")
+writeDataTable(cognl_wb,
+               sheet = "mttau",
+               x = model2_mttau_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+```
+## Model 2 stratified by gender
+```{r mttau model 2 by gender}
+# Model 2: Model 1 + SBP + DBP + total chol + a1c + current smoker 
+## men
+model2men_mttau_nl <- lm(scale(taumedtempsuvr_1) ~
+                           as.factor(ethnicity) +
+                           agenew +
+                           edu + 
+                           income + 
+                           as.factor(hasnoinsurance) + 
+                           as.factor(married) +
+                           sbpavg +
+                           dbpavg + 
+                           choltot + 
+                           a1c + 
+                           as.factor(smkcur) +
+                           as.factor(apoe4_positivity),
+                      data = menwithmttau_nl)
+summary(model2men_mttmodel2men_mttau_nlau)
+
+## outputting results
+model2men_mttau_nl_est <- cbind(coef = coef(model2men_mttau_nl),
+                             confint(model2men_mttau_nl, level = 0.95),
+                             pvalue = summary(model2men_mttau_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "mttau men")
+writeDataTable(cognl_wb,
+               sheet = "mttau men",
+               x = model2men_mttau_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+## women
+model2women_mttau_nl <- lm(scale(taumedtempsuvr_1) ~
+                          as.factor(ethnicity) +
+                          agenew +
+                          edu +
+                          income +
+                          as.factor(hasnoinsurance) +
+                          as.factor(married) +
+                          sbpavg +
+                          dbpavg + 
+                          choltot + 
+                          a1c + 
+                          as.factor(smkcur) +
+                          as.factor(apoe4_positivity),
+                        data = womenwithmttau_nl)
+summary(model2women_mttau_nl)
+
+## outputting results
+model2women_mttau_nl_est <- cbind(coef = coef(model2women_mttau_nl),
+                               confint(model2women_mttau_nl, level = 0.95),
+                               pvalue = summary(model2women_mttau_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "mttau women")
+writeDataTable(cognl_wb,
+               sheet = "mttau women",
+               x = model2women_mttau_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+```
+```{r mttau clean, include = FALSE}
+## cleaning up workspace
+rm(model2_mttau_nl, model2_mttau_nl_est,
+   model2men_mttau_nl, model2men_mttau_nl_est,
+   model2women_mttau_nl, model2women_mttau_nl_est,
+   menwithmttau_nl, womenwithmttau_nl)
+```
+# Models for cortical thickness  
+## Creating gender stratified datasets
+```{r ct strat, include = FALSE}
+menwithct_nl <- withctv1_nl %>% filter(gender == 0) # n=620
+womenwithct_nl <- withctv1_nl %>% filter(gender == 1) # n=1412
+```
+## Model 2 with interaction term
+```{r ct model 2 with intx, include = FALSE}
+model2_ct_nl <- lm(scale(ctmetaroi_1) ~
+                     as.factor(ethnicity) +
+                     as.factor(gender) +
+                     as.factor(ethnicity)*as.factor(gender) +
+                     agenew +
+                     as.factor(married) +
+                     edu + 
+                     income + 
+                     as.factor(hasnoinsurance) +
+                     as.factor(mriscanner_1) +
+                     sbpavg +
+                     dbpavg + 
+                     choltot + 
+                     a1c +
+                     as.factor(smkcur) +
+                     as.factor(apoe4_positivity),
+                data = withmttau1_nl)
+summary(model2_ct_nl)
+
+## outputting results
+model2_ct_nl_est <- cbind(coef = coef(model2_ct_nl),
+                       confint(model2_ct_nl, level = 0.95),
+                       pvalue = summary(model2_ct_nl)$coefficients[,4]) %>% 
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "ct")
+writeDataTable(cognl_wb,
+               sheet = "ct",
+               x = model2_ct_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+```
+## Model 2 stratified by gender 
+```{r ct model 2 by gender, include = FALSE}
+# Model 2: Model 1 + SBP + DBP + total chol + a1c + current smoker 
+## men
+model2men_ct_nl <- lm(scale(ctmetaroi_1) ~
+                        as.factor(ethnicity) +
+                        agenew +
+                        as.factor(married) +
+                        edu +
+                        income + 
+                        as.factor(hasnoinsurance) +
+                        as.factor(mriscanner_1) +
+                        sbpavg +
+                        dbpavg + 
+                        choltot + 
+                        a1c + 
+                        as.factor(smkcur) +
+                        as.factor(apoe4_positivity),
+                data = menwithct_nl)
+summary(model2men_ct_nl)
+
+## outputting results
+model2men_ct_nl_est <- cbind(coef = coef(model2men_ct_nl),
+                          confint(model2men_ct_nl, level = 0.95),
+                          pvalue = summary(model2men_ct_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "ct men")
+writeDataTable(cognl_wb,
+               sheet = "ct men",
+               x = model2men_ct_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+## women
+model2women_ct_nl <- lm(scale(ctmetaroi_1) ~
+                          as.factor(ethnicity) +
+                          agenew +
+                          as.factor(married) +
+                          edu +
+                          income + 
+                          as.factor(hasnoinsurance) +
+                          as.factor(mriscanner_1) + 
+                          sbpavg +
+                          dbpavg + 
+                          choltot + 
+                          a1c + 
+                          as.factor(smkcur) +
+                          as.factor(apoe4_positivity),
+                     data = womenwithct_nl)
+summary(model2women_ct_nl)
+
+## outputting results
+model2women_ct_nl <- cbind(coef = coef(model2women_ct_nl),
+                            confint(model2women_ct_nl, level = 0.95),
+                            pvalue = summary(model2women_ct_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "ct women")
+writeDataTable(cognl_wb,
+               sheet = "ct women",
+               x = model2women_ct_nl,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+```
+```{r ct clean, include = FALSE}
+## cleaning up workspace
+rm(model2_ct_nl, model2_ct_nl_est,
+   model2men_ct_nl, model2men_ct_nl_est,
+   model2women_ct_nl, model2women_ct_nl_est,
+   menwithct_nl, womenwithct_nl)
+```
+# Models for hippocampal volume
+## Creating gender stratified datasets
+```{r hipp strat, include = FALSE}
+menwithhipp_nl <- withhipp1_nl %>% filter(gender == 0) # n=817
+womenwithhipp_nl <- withhipp1_nl %>% filter(gender == 1) # n=1609
+```
+## Model 2 with interaction term
+```{r hipp model 2 with intx, include = FALSE}
+# Model 2: Model 1 + SBP + DBP + total chol + a1c + current smoker 
+model2_hipp_nl <- lm(scale(hippvolnew_1) ~
+                       as.factor(ethnicity) +
+                       as.factor(gender) +
+                       as.factor(ethnicity)*as.factor(gender) +
+                       agenew + 
+                       as.factor(married) +
+                       edu + 
+                       income + 
+                       as.factor(hasnoinsurance) +
+                       as.factor(mriscanner_1) +
+                       sbpavg +
+                       dbpavg + 
+                       choltot + 
+                       a1c + 
+                       as.factor(smkcur) +
+                       icv_1 +
+                       as.factor(apoe4_positivity),
+                   data = withhipp1_nl)
+summary(model2_hipp_nl)
+
+## outputting results
+model2_hipp_nl_est <- cbind(coef = coef(model2_hipp_nl),
+                         confint(model2_hipp_nl, level = 0.95),
+                         pvalue = summary(model2_hipp_nl)$coefficients[,4]) %>% 
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "hipp")
+writeDataTable(cognl_wb,
+               sheet = "hipp",
+               x = model2_hipp_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+```
+## Model 2 stratified by gender
+```{r hipp model 2 by gender}
+# Model 2: Model 1 + SBP + DBP + total chol + a1c + current smoker 
+## men
+model2men_hipp_nl <- lm(scale(hippvolnew_1) ~
+                          as.factor(ethnicity) +
+                          agenew +
+                          edu + 
+                          income + 
+                          as.factor(hasnoinsurance) + 
+                          as.factor(married) +
+                          as.factor(mriscanner_1) +
+                          sbpavg +
+                          dbpavg + 
+                          choltot + 
+                          a1c + 
+                          as.factor(smkcur) +
+                          icv_1 +
+                          as.factor(apoe4_positivity),
+                     data = menwithhipp_nl)
+summary(model2men_hipp_nl)
+
+## outputting results
+model2men_hipp_nl_est <- cbind(coef = coef(model2men_hipp_nl),
+                            confint(model2men_hipp_nl, level = 0.95),
+                            pvalue = summary(model2men_hipp_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "hipp men")
+writeDataTable(cognl_wb,
+               sheet = "hipp men",
+               x = model2men_hipp_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+## women
+model2women_hipp_nl <- lm(scale(hippvolnew_1) ~
+                         as.factor(ethnicity) +
+                         agenew +
+                         edu +
+                         income +
+                         as.factor(hasnoinsurance) +
+                         as.factor(married) +
+                         as.factor(mriscanner_1) +
+                         sbpavg +
+                         dbpavg + 
+                         choltot + 
+                         a1c + 
+                         as.factor(smkcur) +
+                         icv_1 +
+                          as.factor(apoe4_positivity),
+                       data = womenwithhipp_nl)
+summary(model2women_hipp_nl)
+
+## outputting results
+model2women_hipp_nl_est <- cbind(coef = coef(model2women_hipp_nl),
+                              confint(model2women_hipp_nl, level = 0.95),
+                              pvalue = summary(model2women_hipp_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "hipp women")
+writeDataTable(cognl_wb,
+               sheet = "hipp women",
+               x = model2women_hipp_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+```
+```{r hipp clean, include = FALSE}
+## cleaning up workspace
+rm(model2_hipp_nl, model2_hipp_nl_est,
+   model2women_hipp_nl, model2women_hipp_nl_est,
+   model2men_hipp_nl, model2men_hipp_nl_est,
+   menwithhipp_nl,  womenwithhipp_nl)
+```
+
+# Models for log(wmhv) deposition 
+## Creating gender stratified datasets
+```{r wmhv strat, include = FALSE}
+menwithwmhv_nl <- withwmhv1_nl %>% filter(gender == 0) # n=876
+womenwithwmhv_nl <- withwmhv1_nl %>% filter(gender == 1) # n=1706
+```
+## Model 2 with interaction term
+```{r wmhv model 2 with intx, include = FALSE}
+# Model 2: Model 1 + SBP + DBP + total chol + a1c + current smoker 
+model2_wmhv_nl <- lm(logwmhv1 ~
+                       as.factor(ethnicity) +
+                       as.factor(gender) +
+                       as.factor(ethnicity)*as.factor(gender) +
+                       agenew + 
+                       as.factor(married) +
+                       edu + 
+                       income + 
+                       as.factor(hasnoinsurance) +
+                       as.factor(mriscanner_1) +
+                       sbpavg +
+                       dbpavg + 
+                       choltot + 
+                       a1c + 
+                       as.factor(smkcur) +
+                       icv_1 +
+                       as.factor(apoe4_positivity),
+                  data = withwmhv1_nl)
+summary(model2_wmhv_nl)
+
+## outputting results
+model2_wmhv_nl_est <- cbind(coef = exp(coef(model2_wmhv_nl)),
+                         exp(confint(model2_wmhv_nl, level = 0.95)),
+                         pvalue = summary(model2_wmhv_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "wmhv")
+writeDataTable(cognl_wb,
+               sheet = "wmhv",
+               x = model2_wmhv_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+```
+## Model 2 stratified by gender
+```{r wmhv model 2 by gender}
+## men
+model2men_wmhv_nl <- lm(logwmhv1 ~
+                          as.factor(ethnicity) +
+                          agenew +
+                          edu + 
+                          income +
+                          as.factor(hasnoinsurance) +
+                          as.factor(married) +
+                          as.factor(mriscanner_1) +
+                          sbpavg +
+                          dbpavg + 
+                          choltot + 
+                          a1c + 
+                          as.factor(smkcur) +
+                          icv_1 +
+                          as.factor(apoe4_positivity),
+                     data = menwithwmhv_nl)
+summary(model2men_wmhv_nl)
+
+## outputting results
+model2men_wmhv_nl_est <- cbind(coef = exp(coef(model2men_wmhv_nl)),
+                            exp(confint(model2men_wmhv_nl, level = 0.95)),
+                              pvalue = summary(model2men_wmhv_nl)$coefficients[,4]) %>% 
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "wmhv men")
+writeDataTable(cognl_wb,
+               sheet = "wmhv men",
+               x = model2men_wmhv_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+## women
+model2women_wmhv_nl <- lm(logwmhv1 ~
+                         as.factor(ethnicity) +
+                         agenew +
+                         edu +
+                         income +
+                         as.factor(hasnoinsurance) +
+                         as.factor(married) +
+                         as.factor(mriscanner_1) +
+                         sbpavg +
+                         dbpavg + 
+                         choltot + 
+                         a1c + 
+                         as.factor(smkcur) +
+                         icv_1 +
+                          as.factor(apoe4_positivity),
+                       data = womenwithwmhv_nl)
+summary(model2women_wmhv_nl)
+
+## outputting results
+model2women_wmhv_nl_est <- cbind(coef = exp(coef(model2women_wmhv_nl)),
+                              exp(confint(model2women_wmhv_nl, level = 0.95)),
+                              pvalue = summary(model2women_wmhv_nl)$coefficients[,4]) %>% 
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "wmhv women")
+writeDataTable(cognl_wb,
+               sheet = "wmhv women",
+               x = model2women_wmhv_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+```
+```{r wmhv clean, include = FALSE}
+## cleaning up workspace
+rm(model2_wmhv_nl, model2_wmhv_nl_est,
+   model2men_wmhv_nl, model2men_wmhv_nl_est,
+   model2women_wmhv_nl, model2women_wmhv_nl_est,
+   menwithwmhv_nl, womenwithwmhv_nl)
+```
+
+# Models for lacunar infarcts
+This model did not converge well due to small cell sizes. Code here for reference, but did not present in the paper. 
+## Creating gender stratified datasets
+```{r lac strat, include = FALSE}
+menwithlac_nl <- withlac1_nl %>% filter(gender == 0) # n=893
+womenwithlac_nl <- withlac1_nl %>% filter(gender == 1) # n=1741
+```
+## Model 2 with interaction term
+```{r lac model 2 with intx, include = FALSE}
+# Model 2: Model 1 + SBP + DBP + total chol + a1c + current smoker 
+model2_lac_nl <- glm(lacune_1 ~
+                       as.factor(ethnicity) +
+                       as.factor(gender) +
+                       as.factor(ethnicity)*as.factor(gender) +
+                       agenew + 
+                       as.factor(married) +
+                       edu + 
+                       income + 
+                       as.factor(hasnoinsurance) + 
+                       sbpavg +
+                       dbpavg + 
+                       choltot + 
+                       a1c + 
+                       as.factor(smkcur) +
+                       as.factor(apoe4_positivity),
+                    #as.factor(mriscanner_1),
+                  family = binomial(link='logit'),
+                  data = withlac1_nl)
+summary(model2_lac_nl) # this model does not converge due to small sample size
+
+## outputting results
+model2_lac_nl_est <- cbind(coef = exp(coef(model2_lac_nl)),
+                        exp(confint(model2_lac_nl, level = 0.95)),
+                        pvalue = summary(model2_lac_nl)$coefficients[,4]) %>% 
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "lac")
+writeDataTable(cognl_wb,
+               sheet = "lac",
+               x = model2_lac_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+```
+## Model 2 stratified by gender
+There are 0 Hispanic men with lacunar infarcts, so I did not re-estimate stratified analyses. We can present the full model with interaction if needed.
+
+```{r lac clean, include = FALSE}
+## cleaning up workspace
+rm(model2_lac_nl, model2_lac_nl_est,
+   menwithlac_nl, menwithlac_nl)
+```
+# Models for microbleeds
+Note that in the lacunar infarcts analysis, all those with lacunar infarcts were scanned on the Vidal scanner, so the fitted probabilities are numerially 0 or 1 depending on the cell. Did not include scanner for these models for that reason. 
+
+## Creating gender stratified datasets
+```{r mb strat, include = FALSE}
+menwithmb_nl <- withmb1_nl %>% filter(gender == 0) # n=1239
+womenwithmb_nl <- withmb1_nl %>% filter(gender == 1) # n=2140
+```
+
+## Model 2 with interaction term
+```{r mb model 2 with intx, include = FALSE}
+model2_mb_nl <- glm(microhem_1 ~
+                      as.factor(ethnicity) +
+                      as.factor(gender) +
+                      as.factor(ethnicity)*as.factor(gender) +
+                      agenew + 
+                      as.factor(married) +
+                      edu + 
+                      income + 
+                      as.factor(hasnoinsurance) +
+                      sbpavg +
+                      dbpavg + 
+                      choltot + 
+                      a1c + 
+                      as.factor(smkcur) +
+                      as.factor(apoe4_positivity),
+                 #as.factor(mriscanner_1),
+                 family = binomial(link='logit'),
+                 data = withmb1_nl)
+summary(model2_mb_nl)
+
+## outputting results
+model2_mb_nl_est <- cbind(coef = exp(coef(model2_mb_nl)),
+                        exp(confint(model2_mb_nl, level = 0.95)),
+                       pvalue = summary(model2_mb_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "mb")
+writeDataTable(cognl_wb,
+               sheet = "mb",
+               x = model2_mb_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+```
+## Model 2 stratified by gender
+```{r mb model 2 by gender}
+## men
+model2men_mb_nl <- glm(microhem_1 ~
+                         as.factor(ethnicity) +
+                         agenew +
+                         edu + 
+                         income + 
+                         as.factor(hasnoinsurance) + 
+                         as.factor(married) +
+                         #as.factor(mriscanner_1) +
+                         sbpavg +
+                         dbpavg + 
+                         choltot + 
+                         a1c + 
+                         as.factor(smkcur) +
+                         as.factor(apoe4_positivity),
+                     family = binomial(link='logit'),
+                     data = menwithmb_nl)
+summary(model2men_mb_nl)
+
+## outputting results
+model2men_mb_nl_est <- cbind(coef = exp(coef(model2men_mb_nl)),
+                          exp(confint(model2men_mb_nl, level = 0.95)),
+                          pvalue = summary(model2men_mb_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "mb men")
+writeDataTable(cognl_wb,
+               sheet = "mb men",
+               x = model2men_mb_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+
+## women
+model2women_mb_nl <- glm(microhem_1 ~
+                         as.factor(ethnicity) +
+                         agenew +
+                         edu +
+                         income +
+                         as.factor(hasnoinsurance) +
+                         as.factor(married) +
+                         #as.factor(mriscanner_1) +
+                         sbpavg +
+                         dbpavg + 
+                         choltot + 
+                         a1c + 
+                         as.factor(smkcur) +
+                          as.factor(apoe4_positivity),
+                       family = binomial(link='logit'),
+                       data = womenwithmb_nl)
+summary(model2women_mb_nl)
+
+## outputting results
+model2women_mb_nl_est <- cbind(coef = exp(coef(model2women_mb_nl)),
+                            exp(confint(model2women_mb_nl, level = 0.95)),
+                            pvalue = summary(model2women_mb_nl)$coefficients[,4]) %>%
+  round(., digits = 2) %>%
+  as.data.frame() %>% view()
+
+addWorksheet(cognl_wb, sheetName = "mb women")
+writeDataTable(cognl_wb,
+               sheet = "mb women",
+               x = model2women_mb_nl_est,
+               colNames = TRUE,
+               rowNames = TRUE)
+
+## saving workbook
+saveWorkbook(cognl_wb,
+             "./Results - RaceEthGenImg/cognl.xlsx",
+             overwrite = TRUE)
+```
+
+```{r mb clean, include = FALSE}
+## cleaning up workspace
+rm(model2_mb_nl, model2_mb_nl_est,
+   model2men_mb_nl, model2men_mb_nl_est,
+   model2women_mb_nl, model2women_mb_nl_est)
+```

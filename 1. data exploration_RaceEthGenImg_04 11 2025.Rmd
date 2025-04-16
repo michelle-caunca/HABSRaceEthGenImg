@@ -1,0 +1,2144 @@
+---
+title: "1. data exploration for aim 2"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-01-20"
+---
+# Purpose of code 
+To prepare dataset for analysis. Research question: are there differences in the distribution of neuroimaging markers of dementia by race/ethnicity and sex/gender? 
+# Getting packages into session
+```{r packages, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(haven) # inputting data 
+library(tidyverse) # data mgmt
+library(psych) # easy summary statistics
+library(DT) # data tables
+library(tableone) # easy table 1 
+library(kableExtra) # format kable objects 
+library(naniar) # for missingness 
+options(max.print=100000)
+```
+
+# Uploading data
+Using data from HABS-HD release 6, managed by the HABS-HD headquarters and available at https://apps.unthsc.edu/itr/habs-hd. Paths below reflect local folders that are provided by our data manager, who aids in merging the raw data together. Raw data is presented as separate files by race/ethnicity and wave. When we receive the data, our data manager (Dr. Amber Bahorik) merges them by race and visit to create 1 file for each wave for each type of data. 
+
+## Clinical data 
+```{r clinical data, echo = T, results = 'hide'}
+# Uploading merged data 
+clinical_v1 <- read.csv("/Users/michellecaunca/Box/habs-315 for Michelle/habs_v6/HABS_datasets_clean_v6/HABS_datasets_clean_v6/clinical hd 1 d6 clean.csv") # n=3838, v=1668
+clinical_v2 <- read.csv("/Users/michellecaunca/Box/habs-315 for Michelle/habs_v6/HABS_datasets_clean_v6/HABS_datasets_clean_v6/clinical hd 2 d6 clean.csv") # n=1432, v=1569
+clinical_v3 <- read.csv("/Users/michellecaunca/Box/habs-315 for Michelle/habs_v6/HABS_datasets_clean_v6/HABS_datasets_clean_v6/clinical hd 3 d6 clean.csv") # n=547, v=1552
+clinical_v4 <- read.csv("/Users/michellecaunca/Box/habs-315 for Michelle/habs_v6/HABS_datasets_clean_v6/HABS_datasets_clean_v6/clinical hd 4 d6 clean.csv") # n=151, v=1442
+
+# Saving copies in Rdata format 
+save(clinical_v1, file = "./clinical_v1.RData") 
+save(clinical_v2, file = "./clinical_v2.RData") 
+save(clinical_v3, file = "./clinical_v3.RData") 
+save(clinical_v4, file = "./clinical_v4.RData") 
+```
+## Imaging data 
+```{r img data, echo = T, results = 'hide'}
+# Uploading merged data 
+img_v1 <- read.csv("/Users/michellecaunca/Box/habs-315 for Michelle/habs_v6/HABS_datasets_clean_v6/HABS_datasets_clean_v6/mri hd 1 d6 clean.csv") # n=3838, v=285
+img_v2 <- read.csv("/Users/michellecaunca/Box/habs-315 for Michelle/habs_v6/HABS_datasets_clean_v6/HABS_datasets_clean_v6/mri hd 2 d6 clean.csv") # n=1432, v=285
+img_v3 <- read.csv("/Users/michellecaunca/Box/habs-315 for Michelle/habs_v6/HABS_datasets_clean_v6/HABS_datasets_clean_v6/mri hd 3 d6 clean.csv") # n=547, v=285
+img_v4 <- read.csv("/Users/michellecaunca/Box/habs-315 for Michelle/habs_v6/HABS_datasets_clean_v6/HABS_datasets_clean_v6/mri hd 4 d6 clean.csv") # n=141, v=285
+
+# Saving copies in Rdata format 
+save(img_v1, file = "./img_v1.RData") 
+save(img_v2, file = "./img_v2.RData") 
+save(img_v3, file = "./img_v3.RData") 
+save(img_v4, file = "./img_v4.RData") 
+```
+## Genomic data 
+```{r genomic data, echo = T, results = 'hide'}
+# Uploading data 
+genomic <- read.csv("/Users/michellecaunca/Box/habs-315 for Michelle/habs_v6/HABS_datasets_clean_v6/HABS_datasets_clean_v6/genomics hd 1 d6 clean.csv") # n=3365, v=11
+
+# Saving copy in Rdata format 
+save(genomic, file = "./genomic.RData") # n=3365, v=11
+```
+# Identifying baseline visit 
+Participants can enroll at any visit, so this code attempts to identify everyone's baseline visit aka first visit in the study. Participants' first visit is the baseline for this study.
+
+Overall, based on the datachecks I did (see code), I think that there are 3840 unique med_ids (aka unique participants) in the study overall, and that all but 2 participants have their baseline visit at visit 1. The two participant ids that have their baseline visit at visit 2 are 9680 and 4384.
+
+```{r baseline, include = FALSE}
+# loading data
+load("./clinical_v1.RData") # n=3838, v=1668
+load("./clinical_v2.RData") # n=1432, v=1569
+load("./clinical_v3.RData") # n=547, v=1552
+load("./clinical_v4.RData") # n=151, v=1442
+
+# gathering all ids, visit_id, and ages
+## using age as indicator for time 
+id1 <- clinical_v1 %>%
+  select(med_id,
+         visit_id,
+         age,
+         interview_date) %>%
+  mutate(intdatenew = as.Date(interview_date,
+                              format = "%m/%d/%Y")) # n=3838, v=5
+id2 <- clinical_v2 %>%
+  select(med_id,
+         visit_id,
+         age,
+         interview_date) %>%
+  mutate(intdatenew = as.Date(interview_date,
+                              format = "%m/%d/%Y"))# n=1432, v=5
+
+id3 <- clinical_v3 %>%
+  select(med_id,
+         visit_id,
+         age,
+         interview_date) %>%
+  mutate(intdatenew = as.Date(interview_date,
+                              format = "%m/%d/%Y"))# n=547, v=5
+id4 <- clinical_v4 %>%
+  select(med_id,
+         visit_id,
+         age,
+         interview_date) %>%
+  mutate(intdatenew = as.Date(interview_date,
+                              format = "%m/%d/%Y"))# n=151, v=5
+
+# stacking all datasets together
+allid <- bind_rows(id1, id2, id3, id4) # n=5968, v=5
+
+# checking for duplicates 
+check <- duplicated(allid) # which rows are duplicates? 6 duplicate rows
+dup <- allid[check,] # identifying rows that are duplicates
+view(dup)
+dupid <- dup$med_id # getting id's of duplicates
+dupcheck <- allid %>% # eyeball test to check which obs are duplicates
+  filter(med_id %in% dupid)
+view(dupcheck)
+check2 <- allid[!duplicated(allid),] # we retain repeated measures when we get rid of duplicates  
+dupcheck2 <- check2 %>%
+  filter(med_id %in% dupid) %>%
+  view()
+
+# get rid of duplicates
+allid2 <- allid %>% distinct() # n=5962, v=5 (there were 6 duplicates)
+
+# counting visits 
+countvisits <- allid2 %>% 
+  group_by(med_id) %>% 
+  tally() %>%
+  rename(visitcount = n)
+view(countvisits) # n=3840, v=2
+
+# merging visit counts
+# dealing with ids that gave me issues (see note below)
+allid3 <- allid2 %>%
+  left_join(., countvisits, by = "med_id")  %>%
+  mutate(agenew = case_when(
+    (med_id == 7639) & (visit_id == 2) ~ age+2,
+    (med_id %in% c("8617", "9076")) & (visit_id == 1) ~ 60,
+    (med_id == 8617) & (visit_id == 2) ~ 61,
+    (med_id == 9076) & (visit_id == 2) ~ 63,
+    TRUE ~ age
+  )) # v=5962, v=7
+
+view(allid3)
+summary(allid3$agenew)
+check <- allid3 %>%
+  filter(med_id %in% c("7639", "8617", "9076")) %>% 
+  view()
+
+ ## in the first round of figuring out the baseline data, i came across 3 issues
+ ## 1) id 7639 has same age at both visits, will add 2 years to visit based on diff in time bw v1 and v2
+ ## 2 & 3) ids 8617, 9076 have age1>age2, but the intdate1 < intdate2, will switch these ages bc it's likely a coding issue
+ ## please see code below for how these were discovered/diagnosed
+ ## for sake of making the baseline data, i came back to this point of the data to fix these by hand
+
+# how many people with multiple visits? (does not tell us baseline)
+check <- allid3 %>% 
+  filter(visitcount == 2) %>% 
+  distinct(med_id) # 890 unique id's with 2 visits
+check <- allid3 %>% 
+  filter(visitcount == 3) %>% 
+  distinct(med_id) # 391 unique id's with 3 visits 
+check <- allid3 %>% 
+  filter(visitcount == 4) %>% 
+  distinct(med_id) # 150 unique id's with 4 visits 
+
+## if >1 visit, at which visit is youngest age? this would be our baseline
+onevisit <- allid3 %>%
+  filter(visitcount == 1) %>% 
+  count(med_id, agenew, visit_id) %>%
+  pivot_wider(names_from = visit_id, 
+              names_glue = "age{visit_id}",
+              values_from = agenew) %>%
+  rowwise() %>%
+  mutate(minage = min(age1, age2, na.rm = TRUE)) %>%
+  view() # n=2409, v=5
+
+check <- onevisit %>%
+  filter(age1>age2) %>%
+  view()
+ # 0 ids where prior age is greater than subsequent age 
+
+twovisits <- allid3 %>% 
+  filter(visitcount == 2) %>% 
+  count(med_id, agenew, visit_id) %>%
+  pivot_wider(names_from = visit_id, 
+              names_glue = "age{visit_id}",
+              values_from = agenew) %>%
+  rowwise() %>%
+  mutate(minage = min(age1, age2, age3, na.rm = TRUE)) %>%
+  view() # n=890, v=6
+
+check <- twovisits %>%
+  filter(age1>age2 | age1>age3 | age2>age3) %>%
+  view()
+ # 890 with 2 visits before i fixed code above
+ # ids 8617, 9076 have age1>age2, but the intdate1 < intdate2...went back and fixed this in the code such that i switched their original age1 and age2
+
+threevisits <- allid3 %>% 
+  filter(visitcount == 3) %>% 
+  count(med_id, agenew, visit_id) %>%
+  pivot_wider(names_from = visit_id,
+              names_glue = "age{visit_id}",
+              values_from = agenew) %>%
+  rowwise() %>%
+  mutate(minage = min(age1, age2, age3, age4, na.rm = TRUE)) %>%
+  view() # n=391, v=7
+
+check <- threevisits %>%
+  filter(age1>age2 | age1>age3 | age1>age4 | age2>age3 | age2>age4 | age3>age4) %>%
+  view()
+ # 391 with 3 visits 
+ # 0 ids where prior age > subsequent age 
+
+fourvisits <- allid3 %>% 
+  filter(visitcount == 4) %>%
+  count(med_id, agenew, visit_id) %>%
+  pivot_wider(names_from = visit_id,
+              names_glue = "age{visit_id}",
+              values_from = agenew) %>% 
+  rowwise() %>%
+  mutate(minage = min(age1, age2, age3, age4, na.rm = TRUE)) %>%
+  view() # n=150, v=7
+
+check <- fourvisits %>%
+  filter(age1>age2 | age1>age3 | age1>age4 | age2>age3 | age2>age4 | age3>age4) %>%
+  view()
+ # 150 with 4 visits 
+ # 0 ids where prior age > subsequent age
+ # note that n's of each of the above = 3840, which i believe is the total # of unique id/participants 
+
+# getting baseline visit based on minimum age
+## getting minage for each unique id 
+minage1 <- onevisit %>%
+  select(med_id,
+         minage) # n=2409, v=2
+
+minage2 <- twovisits %>%
+  select(med_id,
+         minage) #n=890, v=2
+
+minage3 <- threevisits %>%
+  select(med_id,
+         minage) #n=391, v=2
+
+minage4 <- fourvisits %>%
+  select(med_id,
+         minage) #n=150, v=2
+
+minageall <- bind_rows(minage1, minage2, minage3, minage4) # n=3840, v=2
+
+## merging with initial stacked dataset from all visits 
+allid4 <- allid3 %>%
+  left_join(minageall, by = "med_id") %>%
+  filter(agenew == minage) %>%
+  view() # n=3840, v=8
+table(allid4$visit_id)
+ # just like before, 3838 have baseline at visit 1, then 2 have at visit 2 
+
+## checking for duplicates, not sure why 3841 instead of 3840
+check <- duplicated(allid4$med_id) # which rows are duplicates? 6 duplicate rows
+dup <- allid4[check,] # identifying rows that are duplicates
+view(dup) # id 7639 is the duplicate med_id
+check2 <- allid4 %>% filter(med_id == 7639) %>% view()
+ # id 7639 has same age at both visits before i fixed it up top
+
+# the code below is how i found out difference in years between visits to figure out how many years to add to id 7639
+#allid5 <- allid3 %>% # need to use long data 
+#  mutate(intyear = as.numeric(format(intdatenew, '%Y'))) %>% 
+#  count(med_id, visit_id, intyear) %>%
+#  pivot_wider(names_from = visit_id,
+#              names_glue = "yearat{visit_id}",
+#              values_from = intyear) %>% 
+#  mutate(diffyr12 = yearat2 - yearat1) %>%
+#  mutate(diffyr13 = yearat3 - yearat1) %>%
+#  mutate(diffyr14 = yearat4 - yearat1) %>%
+#  mutate(diffyr23 = yearat3 - yearat2) %>%
+#  mutate(diffyr24 = yearat4 - yearat2) %>%
+#  mutate(diffyr34 = yearat4 - yearat3) %>%
+#  filter(med_id %in% c("7639","8617","9076")) %>% view()
+  # all these id's have 2 visits, baseline is visit 1, with 2 years in between
+  # will add 2 years to their age2 
+
+# creating baseline clinical dataset, NOT cleaned
+# allid_first has the id #'s of everyones baseline visit in the study
+view(allid4)
+baseline <- allid4 %>%
+  left_join(clinical_v1, by = c("med_id", "visit_id")) %>%
+  left_join(clinical_v2, by = c("med_id", "visit_id") ) %>%
+  distinct()
+ ## this gives you all the participants with their 1st visit, but for the two (9680, 4384) whose baseline is visit 2, we had to add a ton of variables so there are duplicates on the column front that i will clean up below
+
+check <- baseline %>%
+  filter(med_id == 9680 | med_id == 4384) 
+view(check) # eyeball test confirms that the "v1" variables are empty for these 2
+
+save(baseline, file = "./baseline.Rdata") # n=3840, v=3241
+
+```
+
+# Identifying key baseline variables 
+From the baseline dataset, which contains all the unique participants and their baseline data, though right now in wide format so there's a lot of extra variables, I will identify the actual columns we need. 
+```{r covariates, include=FALSE}
+load("./baseline.Rdata") #n=3840, v=3241
+
+# separating the 2 participants whose baseline visit is visit 2
+blv2 <- baseline %>%
+  filter(visit_id == 2) # n=2, v=3241
+view(blv2)
+
+# removing above 2 participants to get those whose baseline is visit 1
+blv1 <- baseline %>%
+  filter(!visit_id == 2) # n=3838, v=3241
+
+# removing unnecessary variables from blv2
+## please see excel sheet in the github folder
+names_blv2 <- names(blv2)
+view(names_blv2)
+write.csv(names_blv2, "./names_blv2.csv") # opened this as csv for ease 
+
+## removing variables from visit 1
+blv2_2 <- blv2 %>%
+  group_by(med_id) %>%
+  select(!ends_with(".x")) %>% # all empty variables from visit 1
+  select(!c("age.y", "interview_date.y")) %>%
+  select(!(adi_nat_rank:X.y)) %>% 
+  rename_with(~ sub(".y$", "", .x), everything()) # removing .y from var names
+head(blv2_2)
+view(names(blv2_2))
+names_blv2_2 <- names(blv2_2)
+write.csv(names_blv2_2, "./names_blv2_2.csv") # opened this as csv for ease
+ # using excel, will create csv for variable names we want 
+
+## saving variables we want for analysis  
+varswant <- read.csv("./vars wanted from blv2_2.csv") %>%
+  pivot_wider(names_from = vars,
+              values_from = vars) %>%
+  as.character()
+view(varswant) #82 variables represented
+
+blv2_3 <- blv2_2 %>%
+  select(all_of(varswant)) # n=2, var=82
+view(blv2_3)
+
+# removing unnecessary variables from blv1
+names_blv1 <- names(blv1)
+view(names_blv1)
+write.csv(names_blv1, "./names_blv1.csv") # opened this as csv for ease 
+
+# removing variables from visit 2
+blv1_2 <- blv1 %>%
+  group_by(med_id) %>%
+  select(!ends_with(".y")) %>% # # all empty variables from visit 2
+  select(!c("age.x", "interview_date.x")) %>% # gets you n=3838, v= 1672, which is the same as the clinical_v1 data 
+  rename_with(~ sub(".x$", "", .x), everything()) # removing .x from var names
+
+## saving variables we want from analysis 
+blv1_3 <- blv1_2 %>%
+  select(all_of(varswant)) # n=3838, v=78
+view(names(blv1_3))
+
+# stacking baseline datasets together  
+baseline2 <- blv1_3 %>%
+  bind_rows(blv2_3) # n=3840, v=82
+
+## checking on the 2 participants whose baseline is visit 2
+check <- baseline2 %>%
+  filter(med_id == 9680 | med_id == 4384) 
+view(check)
+
+## creating a dataset to help rename vars in bulk
+names(baseline2) %>% view()
+varsname <- c("med_id",
+              "visit_id",
+              "intdatenew",
+              "visitcount",
+              "agenew",
+              "minage",
+              "ethnicity",
+              "age",
+              "gender",
+              "edu",
+              "intdate",
+              "maritalstatus",
+              "white",
+              "black",
+              "aian",
+              "asian",
+              "japanese",
+              "korean",
+              "vietnamese",
+              "hawaiian",
+              "guam",
+              "samoan",
+              "otherpac",
+              "raceother",
+              "racespec",
+              "race_aitribe",
+              "race_asian",
+              "race_otherpac",
+              "hispanic",
+              "hispanic_other",
+              "eduhs",
+              "edudeg",
+              "income",
+              "healthstatus",
+              "hasnoinsurance",
+              "cdp_mi",
+              "cdp_cad",
+              "cdp_stk",
+              "cdp_tia",
+              "dementia",
+              "smkcur",
+              "smkever",
+              "imh_cancer",
+              "imh_dm",
+              "imh_htn",
+              "imh_hld",
+              "imh_ad",
+              "imh_mi",
+              "imh_ckd",
+              "imh_stk",
+              "imh_dep",
+              "imh_tbi",
+              "subjmemtot",
+              "socsupptot",
+              "chrststot",
+              "sbp2",
+              "dbp2",
+              "bmi",
+              "cdrsum",
+              "cdrglob",
+              "cdx_cog",
+              "cdx_subjcog",
+              "egfr",
+              "mmsetot",
+              "choltot",
+              "ldl",
+              "gluc",
+              "creat",
+              "egfr_nonaa",
+              "egfr_aa",
+              "a1c",
+              "cdx_htn",
+              "cdx_dyslipid",
+              "cdx_dm",
+              "cdx_cvd",
+              "cdx_b12",
+              "cdx_dep",
+              "clin_abpos",
+              "clin_taupos",
+              "sbp1",
+              "dbp1",
+              "hdl") # 78
+
+vars_rename <- bind_cols(varswant, varsname) %>%
+  rename(oldname = "...1") %>%
+  rename(newname = "...2") %>%
+  as.data.frame()
+view(vars_rename)
+write.csv(vars_rename, "./vars_rename.csv")
+
+## renaming vars
+baseline3 <- baseline2 %>%
+  set_names(vars_rename$newname) 
+view(baseline3)
+view(names(baseline3))
+
+save(baseline3, file = "./baseline3.RData") # n=3840, v=82
+
+```
+# Identifying key imaging variables 
+For this cross-sectional analysis, we will focus on imaging outcomes from wave 1 / visit 1 / baseline visit. However, I include all the waves here since I also use these data for future projects separate from this specific paper. 
+```{r imaging, include = FALSE}
+# load baseline2 data
+load("./baseline3.RData") # n=3840, v=82
+
+# load img data
+load("./img_v1.RData") # n=3838, v=285
+load("./img_v2.RData") # n=1432, v=285
+load("./img_v3.RData") # n=547, v=285
+load("./img_v4.RData") # n=151, v=285
+ # n's match the original clinical data n's above
+ # same number of variables each 
+
+# looking at variable names in csv vile
+namesimg <- names(img_v1)
+write.csv(namesimg, "./namesimg.csv") # opened this as csv for ease, please see githib for details 
+
+## saving variables we want for analysis  
+imgvarswant <- read.csv("./wantimg.csv") %>%
+  pivot_wider(names_from = imgvars,
+              values_from = imgvars) %>%
+  as.character()
+view(imgvarswant) # 59
+
+## creating a dataset to help rename vars in bulk
+imgvarsname <- c("med_id",
+                 "visit_id",
+                 "age",
+                 "mridaysdiff",
+                 "ctmetaroi",
+                 "abtimepoint",
+                 "abdaysdiff",
+                 "absuvr",
+                 "abpos",
+                 "icv",
+                 "tautimepoint",
+                 "taudaysdiff",
+                 "tauscanner",
+                 "taumedtempsuvr",
+                 "taupostcingsuvr",
+                 "taulatparsuvr",
+                 "wmhv",
+                 "microhemct",
+                 "microhem",
+                 "lacunect",
+                 "lacune",
+                 "calct",
+                 "calc",
+                 "mritimepoint",
+                 "taulatparsuvr_erroded",
+                 "tcv",
+                 "tcb",
+                 "hippvol",
+                 "latventvol",
+                 "l_hippvol",
+                 "r_hippvol",
+                 "suggest_exclude",
+                 "def_exclude",
+                 "abscanner",
+                 "mriscanner",
+                 "fa_cc_l",
+                 "fa_chipp_l",
+                 "fa_unc_l",
+                 "fa_gcc_l",
+                 "fa_bcc_l",
+                 "fa_scc_l",
+                 "fa_cc_r",
+                 "fa_chipp_r",
+                 "fa_unc_r",
+                 "fa_gcc_r",
+                 "fa_bcc_r",
+                 "fa_scc_r",
+                 "md_cc_l",
+                 "md_chipp_l",
+                 "md_unc_l",
+                 "md_gcc_l",
+                 "md_bcc_l",
+                 "md_scc_l",
+                 "md_cc_r",
+                 "md_chipp_r",
+                 "md_unc_r",
+                 "md_gcc_r",
+                 "md_bcc_r",
+                 "md_scc_r")
+imgvars_rename <- bind_cols(imgvarswant, imgvarsname) %>%
+  rename(oldname = "...1") %>%
+  rename(newname = "...2") %>%
+  as.data.frame()
+view(imgvars_rename)
+write.csv(imgvars_rename, "./imgvars_rename.csv")
+
+# pulling outcome data
+outcomev1 <- img_v1 %>%
+  select(all_of(imgvarswant)) %>%
+  set_names(imgvars_rename$newname) %>%
+  rename_with(~ paste(., "1", sep = "_")) %>%
+  rename(med_id = med_id_1) %>%
+  select(!visit_id_1) #n=3838, v=58
+view(outcomev1)
+
+outcomev2 <- img_v2 %>%
+  select(all_of(imgvarswant)) %>%
+  set_names(imgvars_rename$newname) %>%
+  rename_with(~ paste(., "2", sep = "_")) %>%
+  rename(med_id = med_id_2) %>%
+  select(!visit_id_2) #n=1432, v=58
+view(outcomev2)
+
+outcomev3 <- img_v3 %>%
+  select(all_of(imgvarswant)) %>%
+  set_names(imgvars_rename$newname) %>%
+  rename_with(~ paste(., "3", sep = "_")) %>%
+  rename(med_id = med_id_3) %>%
+  select(!visit_id_3) #n=547, v=58
+view(outcomev3)
+
+outcomev4 <- img_v4 %>%
+  select(all_of(imgvarswant)) %>%
+  set_names(imgvars_rename$newname) %>%
+  rename_with(~ paste(., "4", sep = "_")) %>%
+  rename(med_id = med_id_4) %>%
+  select(!visit_id_4) #n=151, v=58
+view(outcomev4)
+
+## checking if those w/ baseline=v2 have img after
+outcome_bl2v3 <- img_v3 %>%
+  select(all_of(imgvarswant)) %>% 
+  filter(med_id == 9680 | med_id == 4384)  # they don't have imaging at v3
+view(outcome_bl2v3)
+
+outcome_bl2v4 <- img_v4 %>%
+  select(all_of(imgvarswant)) %>% 
+  filter(med_id == 9680 | med_id == 4384)  # they don't have imaging at v4
+view(outcome_bl2v4)
+
+outcome_bl2 <- img_v2 %>%
+  select(all_of(imgvarswant)) %>% 
+  filter(med_id == 9680 | med_id == 4384)  # n=2, v=30 i think they only have imaging at same visit so they might have to be excluded anyway, but we'll include for now 
+view(outcome_bl2)
+
+# combining outcome data
+# will use age to figure out everyone's first imaging visit 
+outcome <- outcomev1 %>%
+  full_join(outcomev2, by = "med_id") %>% # n=3843, v=115
+  full_join(outcomev3, by = "med_id") %>% # n=3846, v=172
+  full_join(outcomev4, by = "med_id") %>% # n=3846, v=229
+  distinct() %>% # added this bc of duplicates 
+  rowwise() %>%
+  mutate(minage = min(age_1, age_2, age_3, age_4, na.rm = TRUE)) 
+view(outcome) 
+view(names(outcome)) # n=3840, v=230
+
+check <- outcome %>%
+  filter(age_1>age_2 | age_1>age_3 | age_1>age_4 | age_2>age_3 | age_2>age_4 | age_3>age_4) %>%
+  view()
+# same ids 8614, 9076 have age at visit 1< age at visit again which i think is a coding issue 
+# we will use agenew anyway and select img_1 markers, so no need to change img dataset at this time 
+
+save(outcome, file = "./outcome.RData") # n=3840, v=230
+```
+
+# Adding APOE4 allele to the dataset
+```{r apoe, include = FALSE}
+load("./genomic.RData") # n=3365, v=11
+view(names(genomic))
+
+# just getting APOE4 alleles
+apoe4 <- genomic %>%
+  select(med_id,
+         apoe4_genotype,
+         apoe4_positivity,
+         apoe4_rs429358,
+         apoe4_rs7412)
+view(apoe4)
+
+save(apoe4, file = "./apoe4.Rdata")
+```
+
+# Creating aim2 dataset
+I will do a left join so that we can make missingness variables later during data cleaning. 
+```{r all data, include = FALSE}
+load("./outcome.RData") # n=3840, v=230
+load("./baseline3.RData") # n=3840, v=82
+load("./apoe4.Rdata") # n=3365, v=5
+
+aim2 <- baseline3 %>% 
+  left_join(outcome, by = "med_id") %>%
+  left_join(apoe4, by = "med_id") %>% 
+  select(!minage.y) %>%
+  rename(minage = minage.x) %>%
+  distinct(med_id, .keep_all = TRUE)
+
+head(aim2) 
+
+## checking for duplicates 
+check <- aim2 %>%
+  count(med_id) #n=3840
+check <- duplicated(aim2$med_id)
+dup <- aim2[check,]
+dupid <- dup$med_id
+dupcheck <- aim2 %>%
+  filter(med_id %in% dupid)
+view(dupcheck)
+
+# saving dataset 
+save(aim2, file = "./aim2.RData") #n=3840, v=314
+view(names(aim2))
+```
+
+# Data exploration 
+I plot and summarize each variable here for data exploration. 
+
+Some of the healthcare variables (though self-reported) might be more possible mediators, so will include them just in case we want for our prelim analysis. 
+
+Finally, some variables needed cleaning / manipulation or I needed to create a separate variable, so that's also done here. 
+
+If we update the variables with the latest release, we'll need to account for the other missingness codes (I think 7777, 8888). 
+
+Remember, the two participant id that have their baseline visit at visit 2 are 9680 and 4384.
+```{r data exploration, include = FALSE}
+load("./aim2.Rdata") # n=3840, v=314
+names_aim2 <- names(aim2)
+view(names_aim2)
+write.csv(names_aim2, "./names_aim2.csv")
+str(aim2)
+
+# visit_id
+summary(as.factor(aim2$visit_id)) # 3838 at visit 1, 2 at visit 2
+ # good reminder that the visit 2 baseline cov are already in here
+ # it's their outcome data we need to update
+
+# ethnicity
+summary(as.factor(aim2$ethnicity)) # no missing 
+ggplot(aim2, aes(x=as.factor(ethnicity))) +
+  geom_bar()
+str(aim2$ethnicity)
+ # when comparing this to the individual race variables below, things don't seem to line up... will create a new race variable based on the actual race/ethnicity variables bc i don't know how this one was generated 
+
+# agenew
+summary(aim2$agenew) # no missing
+ggplot(aim2, aes(agenew)) +
+  geom_density(kernel = "gaussian") # pretty normal
+
+# gender
+summary(as.factor(aim2$gender)) # no missing 
+ggplot(aim2, aes(x=as.factor(gender))) +
+  geom_bar()
+str(aim2$gender) 
+ # 0=male 1460, 1=female 2380
+
+# edu (id_education)
+summary(aim2$edu) # no missing 
+ggplot(aim2, aes(x=as.factor(edu))) +
+  geom_bar() # slight left skew 
+str(aim2$edu) 
+
+# intdate (interview_date)
+summary(aim2$intdate)
+view(aim2$intdate)
+ # will convert to date format 
+
+# intdatenew 
+summary(aim2$intdatenew)
+view(aim2$intdatenew)
+
+# maritalstatus (id_marital_status)
+summary(as.factor(aim2$maritalstatus)) # 6 NA 
+ggplot(aim2, aes(x=as.factor(maritalstatus))) +
+  geom_bar()
+check <- aim2 %>%
+  filter(maritalstatus == 8888 | maritalstatus == 9999)
+ # 1 with information not available... should just code as missing
+ # will also collapse variable 
+ # also checked if maritalstatus = missing codes, none
+
+# race/ethnicity variables 
+table(aim2$white, aim2$ethnicity)
+table(aim2$black, aim2$ethnicity)
+table(aim2$aian, aim2$ethnicity)
+table(aim2$asian, aim2$ethnicity)
+table(aim2$hispanic, aim2$ethnicity)
+table(aim2$hispanic_other, aim2$ethnicity) # hispanic_other is text, will ignore
+table(aim2$white, aim2$black, aim2$aian, aim2$asian)
+table(aim2$hispanic)
+
+## look at cross-tabs
+aim2 %>%
+  group_by(white, black) %>%
+  tally() %>%
+  spread(black, n) # there are 6 people who identify as both white and black...
+
+aim2 %>%
+  group_by(white, hispanic) %>%
+  tally() %>%
+  spread(white, n) 
+
+check <- aim2 %>% # checking for non-hispanic white
+  filter(hispanic == 1 & white == 1)
+
+aim2 %>%
+  group_by(white, aian) %>%
+  tally() %>%
+  spread(aian, n) # 15 who identify as white + aain
+
+aim2 %>%
+  group_by(white, asian) %>%
+  tally() %>%
+  spread(asian, n) # 6 who identify as white + asian
+
+aim2 %>%
+  group_by(black, hispanic) %>%
+  tally() %>%
+  spread(hispanic, n) # 15 who identify as both black and hispanic 
+
+aim2 %>%
+  group_by(black, asian) %>%
+  tally() %>%
+  spread(asian, n) # 2 people who identity as black and asian 
+
+aim2 %>%
+  group_by(black, aian) %>%
+  tally() %>%
+  spread(aian, n) # 6 identify as black and aian 
+
+table(aim2$asian) # 8 asians
+table(aim2$aian) # 28 aian
+
+# eduhs (id_education_high_school) 
+summary(as.factor(aim2$eduhs)) # 16 NA 
+ggplot(aim2, aes(x=as.factor(eduhs))) +
+  geom_bar()
+check <- aim2 %>%
+  filter(eduhs == 8888 | eduhs == 9999) # 0 with missing values 
+ # will collapse to highschool y/n
+
+# edudeg (id_education_degree)	
+summary(as.factor(aim2$edudeg)) # 27 NA 
+ggplot(aim2, aes(x=as.factor(edudeg))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(edudeg == 8888 | edudeg == 9999) # 0 with missing values 
+
+# income (id_income)
+summary(aim2$income) # 202 missing 
+ggplot(aim2, aes(income)) +
+  geom_density(kernel = "gaussian") # right skew 
+check <- aim2 %>%
+  filter(income == 8888 | income == 9999)
+
+# healthstatus (health_status)
+summary(aim2$healthstatus) # 2 missing 
+ggplot(aim2, aes(x=as.factor(healthstatus))) +
+  geom_bar() # right skew 
+check <- aim2 %>%
+  filter(healthstatus == 8888 | healthstatus == 9999)
+
+# hasinsurance (hc_insurance_no_insurance)
+summary(as.factor(aim2$hasinsurance)) # 9 NA 
+ggplot(aim2, aes(x=as.factor(hasinsurance))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(hasinsurance == 8888 | hasinsurance == 9999)
+
+# cdp_mi (cdp_myocardial)
+summary(as.factor(aim2$cdp_mi)) # 2130 NA 
+ggplot(aim2, aes(x=as.factor(cdp_mi))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdp_mi == 8888 | cdp_mi == 9999)
+
+# cdp_cad (cdp_heart_disease)
+summary(as.factor(aim2$cdp_cad)) # 2130 NA 
+ggplot(aim2, aes(x=as.factor(cdp_cad))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdp_cad == -8888 | cdp_cad == -9999)
+
+# cdp_stk (cdp_stroke)
+summary(as.factor(aim2$cdp_stk)) # 2133 NA 
+ggplot(aim2, aes(x=as.factor(cdp_stk))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdp_stk == -8888 | cdp_stk == -9999)
+
+# cdp_tia (cdp_mini_stroke)
+summary(as.factor(aim2$cdp_tia)) # 2130 NA 
+ggplot(aim2, aes(x=as.factor(cdp_tia))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdp_tia == 8888 | cdp_tia == 9999)
+
+# dementia
+summary(as.factor(aim2$dementia)) # 859 NA 
+ggplot(aim2, aes(x=as.factor(dementia))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(dementia == 8888 | dementia == 9999) # 6 with missing values 
+ # will code as NA 
+
+# smkcur
+summary(as.factor(aim2$smkcur)) # 2 NA 
+ggplot(aim2, aes(x=as.factor(smkcur))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(smkcur == 8888 | smkcur == 9999)
+
+# smkever
+summary(as.factor(aim2$smkever)) # 303 NA 
+ggplot(aim2, aes(x=as.factor(smkever))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(smkever == 8888 | smkever == 9999)
+ # 1 person coded as 2 but this isn't defined in data dictionary
+ # will code as missing 
+
+# imh_cancer
+summary(as.factor(aim2$imh_cancer)) # 3 NA 
+ggplot(aim2, aes(x=as.factor(imh_cancer))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(imh_cancer == 8888 | imh_cancer == 9999)
+
+# imh_dm
+summary(as.factor(aim2$imh_dm)) # 2 NA 
+ggplot(aim2, aes(x=as.factor(imh_dm))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(imh_dm == 8888 | imh_dm == 9999)
+
+# imh_htn
+summary(as.factor(aim2$imh_htn)) # 2 NA 
+ggplot(aim2, aes(x=as.factor(imh_htn))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(imh_htn == 8888 | imh_htn == 9999)
+
+# imh_hld
+summary(as.factor(aim2$imh_hld)) # 1 NA 
+ggplot(aim2, aes(x=as.factor(imh_hld))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(imh_hld == 8888 | imh_hld == 9999)
+
+# imh_ad
+summary(as.factor(aim2$imh_ad)) # 2 NA 
+ggplot(aim2, aes(x=as.factor(imh_ad))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(imh_ad == 8888 | imh_ad == 9999)
+
+# imh_mi
+summary(as.factor(aim2$imh_mi)) # 2 NA 
+ggplot(aim2, aes(x=as.factor(imh_mi))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(imh_mi == 8888 | imh_mi == 9999)
+
+# imh_ckd
+summary(as.factor(aim2$imh_ckd)) # 1 NA 
+ggplot(aim2, aes(x=as.factor(imh_ckd))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(imh_ckd == 8888 | imh_ckd == 9999)
+
+# imh_stk
+summary(as.factor(aim2$imh_stk)) # 1 NA 
+ggplot(aim2, aes(x=as.factor(imh_stk))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(imh_stk == 8888 | imh_stk == 9999)
+
+# imh_dep
+summary(as.factor(aim2$imh_dep)) # 1 NA 
+ggplot(aim2, aes(x=as.factor(imh_dep))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(imh_dep == 8888 | imh_dep == 9999)
+
+# imh_tbi
+summary(as.factor(aim2$imh_tbi)) # 3 NA 
+ggplot(aim2, aes(x=as.factor(imh_tbi))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(imh_tbi == 8888 | imh_tbi == 9999)
+
+# subjmemtot 
+summary(aim2$subjmemtot) # 86 missing 
+ggplot(aim2, aes(x=as.factor(subjmemtot))) +
+  geom_bar() # right skew 
+check <- aim2 %>%
+  filter(subjmemtot == 8888 | subjmemtot == 9999)
+str(aim2$subjmemtot) 
+
+# socsupptot
+summary(aim2$socsupptot) # 5 missing 
+ggplot(aim2, aes(x=as.factor(socsupptot))) +
+  geom_bar() # left skew 
+check <- aim2 %>%
+  filter(socsupptot == 8888 | socsupptot == 9999)
+
+# chrststot
+summary(aim2$chrststot) # 5 missing 
+ggplot(aim2, aes(chrststot)) +
+  geom_density(kernel="gaussian") # slight left skew 
+check <- aim2 %>%
+  filter(chrststot == 8888 | chrststot == 9999)
+
+# measured blood pressure
+## sbp1
+summary(aim2$sbp1) # 18 missing 
+ggplot(aim2, aes(sbp1)) +
+  geom_density(kernel="gaussian") # normal 
+check <- aim2 %>%
+  filter(sbp1 == 8888 | sbp1 == 9999)
+
+## dbp1
+summary(aim2$dbp1) # 18 missing 
+ggplot(aim2, aes(dbp1)) +
+  geom_density(kernel="gaussian") # normal 
+check <- aim2 %>%
+  filter(dbp1 == 8888 | dbp1 == 9999)
+
+## sbp2
+summary(aim2$sbp2) # 32 missing 
+ggplot(aim2, aes(sbp2)) +
+  geom_density(kernel="gaussian") # normal
+check <- aim2 %>%
+  filter(sbp2 == 8888 | sbp2 == 9999)
+
+## dbp2
+summary(aim2$dbp2) # 32 missing 
+ggplot(aim2, aes(dbp2)) +
+  geom_density(kernel="gaussian") # normal 
+check <- aim2 %>%
+  filter(dbp2 == 8888 | dbp2 == 9999)
+ # will create a mean of these two measurements, will have to look at missingness later
+
+# bmi
+summary(aim2$bmi) # 24 missing 
+ggplot(aim2, aes(bmi)) +
+  geom_density(kernel="gaussian") # normal  
+check <- aim2 %>%
+  filter(bmi == 8888 | bmi == 9999)
+
+# cdrsum
+summary(aim2$cdrsum) # 1 missing 
+ggplot(aim2, aes(cdrsum)) +
+  geom_bar() # slight left skew 
+check <- aim2 %>%
+  filter(cdrsum == 8888 | cdrsum == 9999)
+
+# cdrglob
+summary(aim2$cdrglob) # 0 missing 
+ggplot(aim2, aes(cdrglob)) +
+  geom_bar() # slight left skew 
+check <- aim2 %>%
+  filter(cdrglob == 8888 | cdrglob == 9999)
+
+# cdx_cog
+summary(as.factor(aim2$cdx_cog)) # 0 NA 
+ggplot(aim2, aes(x=as.factor(cdx_cog))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdx_cog == 8888 | cdx_cog == 9999)
+ # 12 coded as "undetermined", will code these as missing 
+
+# cdx_subjcog
+summary(as.factor(aim2$cdx_subjcog)) # 1061 NA 
+ggplot(aim2, aes(x=as.factor(cdx_subjcog))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdx_subjcog == 8888 | cdx_subjcog == 9999)
+
+# egfr
+summary(aim2$egfr) # 2893 missing 
+ggplot(aim2, aes(egfr)) +
+  geom_density(kernel="gaussian") # left skew   
+check <- aim2 %>%
+  filter(egfr == 8888 | egfr == 9999)
+
+# mmsetot
+summary(aim2$mmsetot) # 24 missing 
+ggplot(aim2, aes(mmsetot)) +
+  geom_bar() # left skewed   
+check <- aim2 %>%
+  filter(mmsetot == 8888 | mmsetot == 9999)
+
+# choltot
+summary(aim2$choltot) # 159 missing 
+ggplot(aim2, aes(choltot)) +
+  geom_density(kernel="gaussian") # normal  
+check <- aim2 %>%
+  filter(choltot == 8888 | choltot == 9999)
+
+# ldl
+summary(aim2$ldl) # 207 missing 
+ggplot(aim2, aes(ldl)) +
+  geom_density(kernel="gaussian") # normal  
+check <- aim2 %>%
+  filter(ldl == 8888 | ldl == 9999)
+
+# hdl
+summary(aim2$hdl) # 160 missing 
+ggplot(aim2, aes(hdl)) +
+  geom_density(kernel="gaussian") # normal  
+check <- aim2 %>%
+  filter(hdl == 8888 | hdl == 9999)
+
+# gluc
+summary(aim2$gluc) # 154 missing 
+ggplot(aim2, aes(gluc)) +
+  geom_density(kernel="gaussian") # normal  
+check <- aim2 %>%
+  filter(gluc == 8888 | gluc == 9999)
+
+# creat
+summary(aim2$creat) # 153 missing 
+ggplot(aim2, aes(creat)) +
+  geom_density(kernel="gaussian") # right skew   
+check <- aim2 %>%
+  filter(creat == 8888 | creat == 9999)
+
+# egfr_nonaa
+summary(aim2$egfr_nonaa) # 1139 missing 
+ggplot(aim2, aes(egfr_nonaa)) +
+  geom_density(kernel="gaussian") # normal  
+check <- aim2 %>%
+  filter(egfr_nonaa == 8888 | egfr_nonaa == 9999)
+
+# egfr_aa
+summary(aim2$egfr_aa) # 1140 missing 
+ggplot(aim2, aes(egfr_aa)) +
+  geom_density(kernel="gaussian") # normal  
+check <- aim2 %>%
+  filter(egfr_aa == 8888 | egfr_aa == 9999)
+
+# a1c
+summary(aim2$a1c) # 156 missing 
+ggplot(aim2, aes(a1c)) +
+  geom_density(kernel="gaussian") # right skew   
+check <- aim2 %>%
+  filter(a1c == 8888 | a1c == 9999)
+
+# cdx_htn
+summary(as.factor(aim2$cdx_htn)) # 1 NA 
+ggplot(aim2, aes(x=as.factor(cdx_htn))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdx_htn == 8888 | cdx_htn == 9999)
+
+# cdx_dyslipid
+summary(as.factor(aim2$cdx_dyslipid)) # 0 NA 
+ggplot(aim2, aes(x=as.factor(cdx_dyslipid))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdx_dyslipid == 8888 | cdx_dyslipid == 9999)
+
+# cdx_dm
+summary(as.factor(aim2$cdx_dm)) # 0 NA 
+ggplot(aim2, aes(x=as.factor(cdx_dm))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdx_dm == 8888 | cdx_dm == 9999)
+
+# cdx_cvd
+summary(as.factor(aim2$cdx_cvd)) # 0 NA 
+ggplot(aim2, aes(x=as.factor(cdx_cvd))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdx_cvd == 8888 | cdx_cvd == 9999)
+
+# cdx_b12
+summary(as.factor(aim2$cdx_b12)) # 0 NA 
+ggplot(aim2, aes(x=as.factor(cdx_b12))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdx_b12 == 8888 | cdx_b12 == 9999)
+
+# cdx_dep
+summary(as.factor(aim2$cdx_dep)) # 0 NA 
+ggplot(aim2, aes(x=as.factor(cdx_dep))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(cdx_dep == 8888 | cdx_dep == 9999)
+
+# clin_abpos
+summary(as.factor(aim2$clin_abpos)) # 2519 NA 
+ggplot(aim2, aes(x=as.factor(clin_abpos))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(clin_abpos == 8888 | clin_abpos == 9999)
+
+# clin_taupos
+summary(as.factor(aim2$clin_taupos)) # 3025 NA 
+ggplot(aim2, aes(x=as.factor(clin_taupos))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(clin_taupos == 8888 | clin_taupos == 9999)
+
+# for imaging variables, i am going to focus on main outcomes rn 
+## absuvr_1
+summary(as.numeric(aim2$absuvr_1)) # 2139 missing 
+aim2 %>%
+  filter(!is.na(absuvr_1)) %>% 
+  ggplot(aes(as.numeric(absuvr_1))) +
+  geom_density(kernel="gaussian") # right skew   
+check <- aim2 %>%
+  filter(absuvr_1 == 8888 | absuvr_1 == 9999)
+ # need to code as numeric 
+ # need to code hasabv1
+
+## absuvr_2
+summary(as.numeric(aim2$absuvr_2)) # 3127 missing 
+aim2 %>%
+  filter(!is.na(absuvr_2)) %>% 
+  ggplot(aes(as.numeric(absuvr_2))) +
+  geom_density(kernel="gaussian") # right skew   
+check <- aim2 %>%
+  filter(absuvr_2 == 8888 | absuvr_1 == 9999)
+ # need to code as numeric 
+ # need to code hasabv1
+ # need to also recode those two folks with baseline at visit 1 to equal these values 
+
+## abpos_1
+summary(as.factor(aim2$abpos_1)) # 2139 NA 
+ggplot(aim2, aes(x=as.factor(abpos_1))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(abpos_1 == 8888 | abpos_1 == 9999)
+
+## abpos_2
+summary(as.factor(aim2$abpos_2)) # 2139 NA 
+ggplot(aim2, aes(x=as.factor(abpos_2))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(abpos_2 == 8888 | abpos_2 == 9999)
+
+## ctmetaroi_1 
+summary(aim2$ctmetaroi_1) # 1127 missing 
+ggplot(aim2, aes(ctmetaroi_1)) +
+  geom_density(kernel="gaussian") # normal  
+check <- aim2 %>%
+  filter(ctmetaroi_1 == 8888 | ctmetaroi_1 == 9999)
+ # make missingness variable 
+
+## ctmetaroi_2 
+summary(aim2$ctmetaroi_2) # 2803 missing 
+ggplot(aim2, aes(ctmetaroi_2)) +
+  geom_density(kernel="gaussian") # lil more left skewed  
+check <- aim2 %>%
+  filter(ctmetaroi_2 == 8888 | ctmetaroi_2 == 9999)
+ # make missingness variable
+
+## taumedtempsuvr_1
+summary(as.numeric(aim2$taumedtempsuvr_1)) # 2870 missing 
+aim2 %>%
+  filter(!is.na(taumedtempsuvr_1)) %>% 
+  ggplot(aes(as.numeric(taumedtempsuvr_1))) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(taumedtempsuvr_1 == 8888 | taumedtempsuvr_1 == 9999)
+ # make missingness variable
+
+## taumedtempsuvr_2
+summary(as.numeric(aim2$taumedtempsuvr_2)) # 3409 missing 
+aim2 %>%
+  filter(!is.na(taumedtempsuvr_2)) %>% 
+  ggplot(aes(as.numeric(taumedtempsuvr_2))) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(taumedtempsuvr_2 == 8888 | taumedtempsuvr_2 == 9999)
+ # make missingness variable
+
+## taupostcingsuvr_1
+summary(as.numeric(aim2$taupostcingsuvr_1)) # 2854 missing, diff than above?
+aim2 %>%
+  filter(!is.na(taupostcingsuvr_1)) %>% 
+  ggplot(aes(as.numeric(taupostcingsuvr_1))) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(taupostcingsuvr_1 == 8888 | taupostcingsuvr_1 == 9999)
+ # need to make sure the missingness variable accounts for differing missingness between measures 
+
+## taupostcingsuvr_2
+summary(as.numeric(aim2$taupostcingsuvr_2)) # 3399 missing 
+aim2 %>%
+  filter(!is.na(taupostcingsuvr_2)) %>% 
+  ggplot(aes(as.numeric(taupostcingsuvr_2))) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(taupostcingsuvr_2 == 8888 | taupostcingsuvr_2 == 9999)
+
+## taulatparsuvr_1
+summary(as.numeric(aim2$taulatparsuvr_1)) # 2854 missing 
+aim2 %>%
+  filter(!is.na(taulatparsuvr_1)) %>% 
+  ggplot(aes(as.numeric(taulatparsuvr_1))) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(taulatparsuvr_1 == 8888 | taulatparsuvr_1 == 9999)
+
+## taulatparsuvr_2
+summary(as.numeric(aim2$taulatparsuvr_2)) # 3399 missing 
+aim2 %>%
+  filter(!is.na(taulatparsuvr_2)) %>% 
+  ggplot(aes(as.numeric(taulatparsuvr_2))) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(taulatparsuvr_2 == 8888 | taulatparsuvr_2 == 9999)
+
+## wmhv_1
+summary(aim2$wmhv_1) # 271 missing 
+aim2 %>%
+  filter(!is.na(wmhv_1)) %>% 
+  ggplot(aes(wmhv_1)) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(wmhv_1 == 8888 | wmhv_1 == 9999)
+ # have to make log(wmhv) and categorical version as well 
+
+## wmhv_2
+summary(aim2$wmhv_2) # 2448 missing 
+aim2 %>%
+  filter(!is.na(wmhv_2)) %>% 
+  ggplot(aes(wmhv_2)) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(wmhv_2 == 8888 | wmhv_2 == 9999)
+
+## icv_1
+summary(aim2$icv_1) # 282 missing 
+aim2 %>%
+  filter(!is.na(icv_1)) %>% 
+  ggplot(aes(icv_1)) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(icv_1 == 8888 | icv_1 == 9999)
+
+## icv_2 
+summary(aim2$icv_2) # 2493 missing 
+aim2 %>%
+  filter(!is.na(icv_2)) %>% 
+  ggplot(aes(icv_2)) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(icv_2 == 8888 | icv_2 == 9999)
+
+## l_hippvol_1 
+summary(as.numeric(aim2$l_hippvol_1)) # 429 missing 
+aim2 %>%
+  filter(!is.na(l_hippvol_1)) %>% 
+  ggplot(aes(as.numeric(l_hippvol_1))) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(as.numeric(l_hippvol_1) == 8888 | as.numeric(l_hippvol_1) == 9999)
+
+## r_hippvol_1 
+summary(as.numeric(aim2$r_hippvol_1)) # 412 missing, not sure why doesn't match l_hippvol_1
+aim2 %>%
+  filter(!is.na(r_hippvol_1)) %>% 
+  ggplot(aes(as.numeric(r_hippvol_1))) + 
+  geom_density(kernel="gaussian") # right skewed 
+check <- aim2 %>%
+  filter(as.numeric(r_hippvol_1) == 8888 | as.numeric(r_hippvol_1) == 9999)
+
+## microhemct_1
+summary(as.factor(aim2$microhemct_1)) # 157 NA 
+ggplot(aim2, aes(x=as.factor(microhemct_1))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(microhemct_1 == 8888 | microhemct_1 == 9999)
+
+## microhem_1
+summary(as.factor(aim2$microhem_1)) # 157 NA 
+ggplot(aim2, aes(x=as.factor(microhem_1))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(microhem_1 == 8888 | microhem_1 == 9999)
+  # have 1 person coded as 3, which doesn't have a meaning, will code as NA
+
+## lacunect_1
+summary(as.factor(aim2$lacunect_1)) # 157 NA 
+ggplot(aim2, aes(x=as.factor(lacunect_1))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(lacunect_1 == 8888 | lacunect_1 == 9999)
+
+## lacune_1
+summary(as.factor(aim2$lacune_1)) # 157 NA 
+ggplot(aim2, aes(x=as.factor(lacune_1))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(lacune_1 == 8888 | lacune_1 == 9999)
+
+## fa_cc_l_1
+summary(as.numeric(aim2$fa_cc_l_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_cc_l_1)) %>% 
+  ggplot(aes(as.numeric(fa_cc_l_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_cc_l_1) == 8888 | as.numeric(fa_cc_l_1) == 9999)
+
+## fa_cc_r_1
+summary(as.numeric(aim2$fa_cc_r_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_cc_r_1)) %>% 
+  ggplot(aes(as.numeric(fa_cc_r_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_cc_r_1) == 8888 | as.numeric(fa_cc_r_1) == 9999)
+
+## fa_chipp_l_1
+summary(as.numeric(aim2$fa_chipp_l_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_chipp_l_1)) %>% 
+  ggplot(aes(as.numeric(fa_chipp_l_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_chipp_l_1) == 8888 | as.numeric(fa_chipp_l_1) == 9999)
+
+## fa_chipp_r_1
+summary(as.numeric(aim2$fa_chipp_r_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_chipp_r_1)) %>% 
+  ggplot(aes(as.numeric(fa_chipp_r_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_chipp_r_1) == 8888 | as.numeric(fa_chipp_r_1) == 9999)
+
+## fa_unc_l_1
+summary(as.numeric(aim2$fa_unc_l_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_unc_l_1)) %>% 
+  ggplot(aes(as.numeric(fa_unc_l_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_unc_l_1) == 8888 | as.numeric(fa_unc_l_1) == 9999)
+
+## fa_unc_r_1
+summary(as.numeric(aim2$fa_unc_r_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_unc_r_1)) %>% 
+  ggplot(aes(as.numeric(fa_unc_r_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_unc_r_1) == 8888 | as.numeric(fa_unc_r_1) == 9999)
+
+## fa_gcc_l_1
+summary(as.numeric(aim2$fa_gcc_l_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_gcc_l_1)) %>% 
+  ggplot(aes(as.numeric(fa_gcc_l_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_gcc_l_1) == 8888 | as.numeric(fa_gcc_l_1) == 9999)
+
+## fa_gcc_r_1
+summary(as.numeric(aim2$fa_gcc_r_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_gcc_r_1)) %>% 
+  ggplot(aes(as.numeric(fa_gcc_r_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_gcc_r_1) == 8888 | as.numeric(fa_gcc_r_1) == 9999)
+
+## fa_bcc_l_1
+summary(as.numeric(aim2$fa_bcc_l_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_bcc_l_1)) %>% 
+  ggplot(aes(as.numeric(fa_bcc_l_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_bcc_l_1) == 8888 | as.numeric(fa_bcc_l_1) == 9999)
+
+## fa_bcc_r_1
+summary(as.numeric(aim2$fa_bcc_r_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_bcc_r_1)) %>% 
+  ggplot(aes(as.numeric(fa_bcc_r_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_bcc_r_1) == 8888 | as.numeric(fa_bcc_r_1) == 9999)
+
+## fa_scc_l_1
+summary(as.numeric(aim2$fa_scc_l_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_scc_l_1)) %>% 
+  ggplot(aes(as.numeric(fa_scc_l_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_scc_l_1) == 8888 | as.numeric(fa_scc_l_1) == 9999)
+
+## fa_scc_r_1
+summary(as.numeric(aim2$fa_scc_r_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(fa_scc_r_1)) %>% 
+  ggplot(aes(as.numeric(fa_scc_r_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(fa_scc_r_1) == 8888 | as.numeric(fa_scc_r_1) == 9999)
+
+## md_cc_l_1
+summary(as.numeric(aim2$md_cc_l_1)) # 222 NA 
+aim2 %>%
+  filter(!is.na(md_cc_l_1)) %>% 
+  ggplot(aes(as.numeric(md_cc_l_1))) + 
+  geom_density(kernel="gaussian") # some outliers, but normal
+check <- aim2 %>%
+  filter(as.numeric(md_cc_l_1) == 8888 | as.numeric(md_cc_l_1) == 9999)
+
+## md_cc_r_1
+summary(as.numeric(aim2$md_cc_r_1)) # 222 NA 
+aim2 %>%
+  filter(!is.na(md_cc_r_1)) %>% 
+  ggplot(aes(as.numeric(md_cc_r_1))) + 
+  geom_density(kernel="gaussian") # some outliers, but normal 
+check <- aim2 %>%
+  filter(as.numeric(md_cc_r_1) == 8888 | as.numeric(md_cc_r_1) == 9999)
+
+## md_chipp_l_1
+summary(as.numeric(aim2$md_chipp_l_1)) # 222 NA 
+aim2 %>%
+  filter(!is.na(md_chipp_l_1)) %>% 
+  ggplot(aes(as.numeric(md_chipp_l_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(md_chipp_l_1) == 8888 | as.numeric(md_chipp_l_1) == 9999)
+
+## md_chipp_r_1
+summary(as.numeric(aim2$md_chipp_r_1)) # 222 NA 
+aim2 %>%
+  filter(!is.na(md_chipp_r_1)) %>% 
+  ggplot(aes(as.numeric(md_chipp_r_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(md_chipp_r_1) == 8888 | as.numeric(md_chipp_r_1) == 9999)
+
+## md_unc_l_1
+summary(as.numeric(aim2$md_unc_l_1)) # 222 NA 
+aim2 %>%
+  filter(!is.na(md_unc_l_1)) %>% 
+  ggplot(aes(as.numeric(md_unc_l_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(md_unc_l_1) == 8888 | as.numeric(md_unc_l_1) == 9999)
+
+## md_unc_r_1
+summary(as.numeric(aim2$md_unc_r_1)) # 222 NA 
+aim2 %>%
+  filter(!is.na(md_unc_r_1)) %>% 
+  ggplot(aes(as.numeric(md_unc_r_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(md_unc_r_1) == 8888 | as.numeric(md_unc_r_1) == 9999)
+
+## md_gcc_l_1
+summary(as.numeric(aim2$md_gcc_l_1)) # 222 NA 
+aim2 %>%
+  filter(!is.na(md_gcc_l_1)) %>% 
+  ggplot(aes(as.numeric(md_gcc_l_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(md_gcc_l_1) == 8888 | as.numeric(md_gcc_l_1) == 9999)
+
+## md_gcc_r_1
+summary(as.numeric(aim2$md_gcc_r_1)) # 222 NA 
+aim2 %>%
+  filter(!is.na(md_gcc_r_1)) %>% 
+  ggplot(aes(as.numeric(md_gcc_r_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(md_gcc_r_1) == 8888 | as.numeric(md_gcc_r_1) == 9999)
+
+## md_bcc_l_1
+summary(as.numeric(aim2$md_bcc_l_1)) # 222 NA 
+aim2 %>%
+  filter(!is.na(md_bcc_l_1)) %>% 
+  ggplot(aes(as.numeric(md_bcc_l_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(md_bcc_l_1) == 8888 | as.numeric(md_bcc_l_1) == 9999)
+
+## md_bcc_r_1
+summary(as.numeric(aim2$md_bcc_r_1)) # 222 NA 
+aim2 %>%
+  filter(!is.na(md_bcc_r_1)) %>% 
+  ggplot(aes(as.numeric(md_bcc_r_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(md_bcc_r_1) == 8888 | as.numeric(md_bcc_r_1) == 9999)
+
+## md_scc_l_1
+summary(as.numeric(aim2$md_scc_l_1)) # 221 NA 
+aim2 %>%
+  filter(!is.na(md_scc_l_1)) %>% 
+  ggplot(aes(as.numeric(md_scc_l_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(md_scc_l_1) == 8888 | as.numeric(md_scc_l_1) == 9999)
+
+## md_scc_r_1
+summary(as.numeric(aim2$md_scc_r_1)) # 222 NA 
+aim2 %>%
+  filter(!is.na(md_scc_r_1)) %>% 
+  ggplot(aes(as.numeric(md_scc_r_1))) + 
+  geom_density(kernel="gaussian") # normal with some outliers 
+check <- aim2 %>%
+  filter(as.numeric(md_scc_r_1) == 8888 | as.numeric(md_scc_r_1) == 9999)
+
+# apoe4_positivity
+summary(as.factor(aim2$apoe4_positivity)) # 497 NA 
+ggplot(aim2, aes(x=as.factor(apoe4_positivity))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(apoe4_positivity == 8888 | apoe4_positivity == 9999)
+
+# apoe4_genotype
+summary(as.factor(aim2$apoe4_genotype)) # 497 NA 
+ggplot(aim2, aes(x=as.factor(apoe4_genotype))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(apoe4_genotype == 8888 | apoe4_genotype == 9999)
+
+# apoe4_rs429358
+summary(as.factor(aim2$apoe4_rs429358)) # 497 NA 
+ggplot(aim2, aes(x=as.factor(apoe4_rs429358))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(apoe4_rs429358 == 8888 | apoe4_rs429358 == 9999)
+
+# apoe4_rs7412
+summary(as.factor(aim2$apoe4_rs7412)) # 497 NA 
+ggplot(aim2, aes(x=as.factor(apoe4_rs7412))) +
+  geom_bar() 
+check <- aim2 %>%
+  filter(apoe4_rs7412 == 8888 | apoe4_rs7412 == 9999)
+```
+# Creating analysis dataset
+Some variables created were not used in this specific paper, but created for future projects using these same data. 
+```{r analysis dataset, include=FALSE}
+# Creating new variables
+set.seed(123)
+aim2_final <- aim2 %>% # n=3840, v=314
+  
+  # Ethnicity
+  mutate(ethnicity = factor(ethnicity,
+                            levels = c("White",
+                                       "Black",
+                                       "Hispanic"))) %>% 
+  
+  # Married: yes vs. no
+  mutate(married = case_when(
+    maritalstatus == 1 ~ 1,
+    maritalstatus == 2 ~ 0,
+    maritalstatus == 3 ~ 0,
+    maritalstatus == 4 ~ 0,
+    maritalstatus == 5 ~ 0,
+    TRUE ~ NA)) %>% # 1 with value of 6, info not avail, coded as missing
+  
+  # highschool
+  mutate(highschool = case_when(
+    eduhs == 0 ~ 0,
+    eduhs == 1 ~ 1,
+    eduhs == 2 ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # college
+  mutate(college = case_when(
+    edudeg == 0 ~ 0,
+    edudeg == 1 ~ 0,
+    edudeg == 2 ~ 0, 
+    edudeg == 3 ~ 1,
+    edudeg == 4 ~ 1,
+    edudeg == 5 ~ 1,
+    TRUE ~ NA)) %>% 
+  
+  # dementia
+  mutate(dementia = if_else(dementia == 9999, NA, dementia)) %>%
+  
+  # smkever
+  mutate(smkever = if_else(smkever == 2, NA, smkever)) %>%
+  
+  # sbpavg
+  rowwise() %>% 
+  mutate(sbpavg = mean (c(sbp1, sbp2))) %>%
+  
+  # dbpavg
+  rowwise() %>% 
+  mutate(dbpavg = mean (c(dbp1, dbp2))) %>%
+  
+  # cdx_cog
+  mutate(cdx_cog = if_else(cdx_cog == 9, NA, cdx_cog)) %>%
+  
+  # absuvr_1
+  mutate(absuvr_1 = as.numeric(absuvr_1)) %>%
+
+  # hasabv1
+  mutate(hasabv1 = case_when(
+    is.na(absuvr_1) ~ 0,
+    !is.na(absuvr_1) ~ 1,
+    TRUE ~ NA)) %>% 
+  
+  # absuvr_2
+  mutate(absuvr_2 = as.numeric(absuvr_2)) %>%
+  
+  # hasabv2
+  mutate(hasabv2 = case_when(
+    is.na(absuvr_2) ~ 0,
+    !is.na(absuvr_2) ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # hasctv1
+  mutate(hasctv1 = case_when(
+    is.na(ctmetaroi_1) ~ 0,
+    !is.na(ctmetaroi_1) ~ 1,
+    TRUE ~ NA)) %>% 
+  
+  # has ctv2
+  mutate(hasctv2 = case_when(
+    is.na(ctmetaroi_2) ~ 0,
+    !is.na(ctmetaroi_2) ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # taumedtempsuvr_1
+  mutate(taumedtempsuvr_1 = as.numeric(taumedtempsuvr_1)) %>%
+  
+  # hasmttauv1
+  mutate(hasmttauv1 = case_when(
+    is.na(taumedtempsuvr_1) ~ 0,
+    !is.na(taumedtempsuvr_1) ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # taumedtempsuvr_2
+  mutate(taumedtempsuvr_2 = as.numeric(taumedtempsuvr_2)) %>%
+  
+  # hasmttauv2
+  mutate(hasmttauv2 = case_when(
+    is.na(taumedtempsuvr_2) ~ 0,
+    !is.na(taumedtempsuvr_2) ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # taupostcingsuvr_1
+  mutate(taupostcingsuvr_1 = as.numeric(taupostcingsuvr_1)) %>%
+  
+ # haspctauv1
+  mutate(haspctauv1 = case_when(
+    is.na(taupostcingsuvr_1) ~ 0,
+    !is.na(taupostcingsuvr_1) ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # taupostcingsuvr_2
+  mutate(taupostcingsuvr_2 = as.numeric(taupostcingsuvr_2)) %>%
+  
+  # haspctauv2
+  mutate(haspctauv2 = case_when(
+    is.na(taupostcingsuvr_2) ~ 0,
+    !is.na(taupostcingsuvr_2) ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # taulatparsuvr_1
+  mutate(taulatparsuvr_1 = as.numeric(taulatparsuvr_1)) %>%
+  
+  # haslptauv1
+  mutate(haslptauv1 = case_when(
+    is.na(taulatparsuvr_1) ~ 0,
+    !is.na(taulatparsuvr_1) ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # taulatparsuvr_2
+  mutate(taulatparsuvr_2 = as.numeric(taulatparsuvr_2)) %>%
+  
+  # haslptauv2
+  mutate(haslptauv2 = case_when(
+    is.na(taulatparsuvr_2) ~ 0,
+    !is.na(taulatparsuvr_2) ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # haswmhv1
+  mutate(haswmhv1 = case_when(
+    is.na(wmhv_1) ~ 0,
+    !is.na(wmhv_1) ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # haswmhv2
+  mutate(haswmhv2 = case_when(
+    is.na(wmhv_2) ~ 0,
+    !is.na(wmhv_2) ~ 1,
+    TRUE ~ NA)) %>% 
+  
+  # logwmhv1
+  mutate(logwmhv1 = log(wmhv_1+1)) %>%
+  
+  # logwmhv2
+  mutate(logwmhv2 = log(wmhv_2+1)) %>%
+  
+  # excludeforwmh
+  ## Per our imaging colleagues at HABS-HD, there are some IDs for which the WMH data is not valid due to co-pathology that does not allow accurate volumetric measurement. These ID's were provided by HABS-HD and used below.
+  mutate(excludeforwmh = case_when(
+    med_id %in% c(4043,4099,4102,4106,4126,4199,4239,4260,4300,4320,4343,4343,4364,4367,4373,4373,4392,4392,4435,4435,4444,4444,4490,4494,4513,4515,4521,4694,4747,4774,4823,4834,4913,4985,5003,5024,5025,5048,5068,5113,5150,5172,5363,5364,5519,5600,5677,5678,5800,5820,5824,5896,6048,6188,6292,6322,6337,6366,6421,6424,6492,6796,6802,6928,6992,7006,7006,7050,7078,7079,7079,7160,7164,7194,7203,7235,7235,7280,7293,7310,7501,7658,7658, 7688,7765,7837,7837,7846,7908,7930,7963,8209,8339,8461,8462,8619,8624,8747,8925,8925,9025,9048,9501,9647,9865) ~ 1,
+    TRUE ~ 0)) %>% 
+  
+  # microhem_1
+  mutate(microhem_1 = case_when(
+    microhem_1 == 1 ~ 1,
+    microhem_1 == 0 ~ 0,
+    microhem_1 == 3 ~ NA,
+    TRUE ~ NA)) %>%
+  
+  # lacune_1
+  mutate(lacune_1 = case_when(
+    lacune_1 == 1 ~ 1,
+    lacune_1 == 0 ~ 0,
+    lacune_1 == 3 ~ NA,
+    TRUE ~ NA)) %>%
+  
+  # l_hippvol_1
+  mutate(l_hippvol_1 = as.numeric(l_hippvol_1)) %>%
+  
+  # r_hippvol_1
+  mutate(r_hippvol_1 = as.numeric(r_hippvol_1)) %>%
+  
+  # l_hippvol_2
+  mutate(l_hippvol_2 = as.numeric(l_hippvol_2)) %>%
+  
+  # r_hippvol_2
+  mutate(r_hippvol_2 = as.numeric(r_hippvol_2)) %>%
+  
+  # hippvolnew_1 
+  mutate(hippvolnew_1 = l_hippvol_1 + r_hippvol_1) %>%
+  
+  # hippvolnew_2 
+  mutate(hippvolnew_2 = l_hippvol_2 + r_hippvol_2) %>%
+  
+  # hashipp1
+  mutate(hashipp1 = case_when(
+    is.na(hippvolnew_1) ~ 0,
+    !is.na(hippvolnew_1) ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # hashipp2
+  mutate(hashipp2 = case_when(
+    is.na(hippvolnew_2) ~ 0,
+    !is.na(hippvolnew_2) ~ 1,
+    TRUE ~ NA)) %>%
+  
+  # making imaging variables for those whose visit 2 is baseline
+  mutate(absuvr_1 = if_else(med_id %in% c("9680", "4384"), 
+                            absuvr_2, 
+                            absuvr_1)) %>%
+  mutate(abpos_1 = if_else(med_id %in% c("9680", "4384"), 
+                           abpos_2, 
+                           abpos_1)) %>%
+  mutate(ctmetaroi_1 = if_else(med_id %in% c("9680", "4384"), 
+                               ctmetaroi_2, 
+                               ctmetaroi_1)) %>%
+  mutate(taumedtempsuvr_1 = if_else(med_id %in% c("9680", "4384"), 
+                               taumedtempsuvr_2, 
+                               taumedtempsuvr_1)) %>%
+  mutate(taupostcingsuvr_1 = if_else(med_id %in% c("9680", "4384"), 
+                               taupostcingsuvr_2, 
+                               taupostcingsuvr_1)) %>%
+  mutate(taulatparsuvr_1 = if_else(med_id %in% c("9680", "4384"), 
+                               taulatparsuvr_2, 
+                               taulatparsuvr_1)) %>%
+  mutate(wmhv_1 = if_else(med_id %in% c("9680", "4384"), 
+                               wmhv_2, 
+                               wmhv_1)) %>%
+  mutate(icv_1 = if_else(med_id %in% c("9680", "4384"), 
+                               icv_2, 
+                               icv_1)) %>%
+  mutate(hippvol_1 = if_else(med_id %in% c("9680", "4384"), 
+                               hippvol_2, 
+                               hippvol_1)) %>%
+  mutate(microhemct_1 = if_else(med_id %in% c("9680", "4384"), 
+                               microhemct_2, 
+                               microhemct_1)) %>%
+  mutate(microhem_1 = if_else(med_id %in% c("9680", "4384"), 
+                               microhem_2, 
+                               microhem_1)) %>%
+  mutate(lacunect_1 = if_else(med_id %in% c("9680", "4384"), 
+                               lacunect_2, 
+                               lacunect_1)) %>%
+  mutate(lacune_1 = if_else(med_id %in% c("9680", "4384"), 
+                               lacune_2, 
+                               lacune_1))
+  
+view(aim2_final) # n=3840, v=338
+
+# Checking variables created 
+# intdatenew
+str(aim2_final$intdatenew)
+check <- aim2_final %>%
+  select(med_id,
+         intdate, 
+         intdatenew)
+view(check)
+
+# married 
+summary(aim2_final$married) # same NA
+table(aim2_final$married, aim2_final_frs$maritalstatus) # matches up 
+
+# ethnicity
+summary(as.factor(aim2_final_frs$ethnicity))
+levels(as.factor(aim2_final_frs$ethnicity))
+str(as.factor(aim2_final_frs$ethnicity))
+
+# highschool
+aim2_final_frs %>%
+  group_by(eduhs, highschool) %>%
+  tally() %>%
+  spread(highschool, n) # matches up 
+
+# college
+aim2_final_frs %>%
+  group_by(edudeg, college) %>%
+  tally() %>%
+  spread(college, n) # matches up
+
+# dementia
+summary(as.factor(aim2_final_frs$dementia))
+
+# smkever
+summary(as.factor(aim2_final_frs$smkever))
+
+# bp measures
+summary(aim2_final_frs$sbpavg)
+summary(aim2_final_frs$dbpavg)
+
+# cdx_cog
+summary(as.factor(aim2_final_frs$cdx_cog))
+
+# v2 baseline folks imaging check
+check <- aim2_final_frs %>%
+  filter(med_id %in% c("9680", "4384")) %>%
+  select(med_id,
+         absuvr_1,
+         absuvr_2,
+         abpos_1,
+         abpos_2,
+         ctmetaroi_1,
+         ctmetaroi_2,
+         taumedtempsuvr_1,
+         taumedtempsuvr_2,
+         wmhv_1,
+         wmhv_2,
+         icv_1,
+         icv_2,
+         hippvol_1,
+         hippvol_2,
+         l_hippvol_1,
+         r_hippvol_1, 
+         l_hippvol_2,
+         r_hippvol_2)
+view(check) # 4384 doesn't have visit 2 imaging
+
+check <- aim2_final_frs %>%
+  filter(!med_id %in% c("9680", "4384")) %>%
+  select(med_id,
+         absuvr_1,
+         absuvr_2,
+         abpos_1,
+         abpos_2,
+         ctmetaroi_1,
+         ctmetaroi_2,
+         taumedtempsuvr_1,
+         taumedtempsuvr_2,
+         hippvol_1,
+         hippvol_2)
+view(check) 
+
+check <- aim2 %>%
+  filter(med_id %in% c("9680", "4384")) %>%
+  select(med_id,
+         absuvr_1,
+         absuvr_2,
+         absuvr_3,
+         absuvr_4,
+         abpos_1,
+         abpos_2,
+         ctmetaroi_1,
+         ctmetaroi_2,
+         icv_1,
+         icv_2)
+view(check) # confirmed that 4384 doesn't have ab variables 
+
+# absuvr_1
+str(aim2_final_frs$absuvr_1)
+summary(aim2_final_frs$absuvr_1)
+
+# hasabv1
+summary(as.factor(aim2_final_frs$hasabv1))
+summary(aim2_final_frs$absuvr_1)
+
+# absuvr_2
+str(aim2_final_frs$absuvr_2)
+summary(aim2_final_frs$absuvr_2)
+
+# hasabv2
+summary(as.factor(aim2_final_frs$hasabv2))
+
+# hasctv1
+summary(as.factor(aim2_final_frs$hasctv1))
+summary(aim2_final_frs$ctmetaroi_1)
+
+# hasctv2
+summary(as.factor(aim2_final_frs$hasctv2))
+summary(aim2_final_frs$ctmetaroi_2)
+
+# hasmttauv1
+summary(as.factor(aim2_final_frs$hasmttauv1))
+summary(aim2_final_frs$taumedtempsuvr_1)
+
+# hasmttauv2
+summary(as.factor(aim2_final_frs$hasmttauv2))
+summary(aim2_final_frs$taumedtempsuvr_2)
+
+# haspctauv1
+summary(as.factor(aim2_final_frs$haspctauv1))
+summary(aim2_final_frs$taupostcingsuvr_1)
+
+# haspctauv2
+summary(as.factor(aim2_final_frs$haspctauv2))
+summary(aim2_final_frs$taupostcingsuvr_2)
+
+# haslptauv1
+summary(as.factor(aim2_final_frs$haslptauv1))
+summary(aim2_final_frs$taulatparsuvr_1)
+
+# haslptauv2
+summary(as.factor(aim2_final_frs$haslptauv2))
+summary(aim2_final_frs$taulatparsuvr_2)
+
+# haswmhv1
+summary(as.factor(aim2_final_frs$haswmhv1))
+summary(aim2_final_frs$wmhv_1)
+
+# haswmhv2
+summary(as.factor(aim2_final_frs$haswmhv2))
+summary(aim2_final_frs$wmhv_2)
+
+# logwmhv1
+summary(aim2_final_frs$logwmhv1)
+summary(aim2_final_frs$wmhv_1)
+aim2_final_frs %>%
+  filter(!is.na(logwmhv1)) %>% 
+  ggplot(aes(as.numeric(logwmhv1))) + 
+  geom_density(kernel="gaussian") 
+
+aim2_final_frs %>%
+  filter(!is.na(wmhv_1)) %>% 
+  ggplot(aes(as.numeric(wmhv_1))) + 
+  geom_density(kernel="gaussian") 
+
+# logwmhv2
+summary(aim2_final_frs$logwmhv2)
+summary(aim2_final_frs$wmhv_2)
+aim2_final_frs %>%
+  filter(!is.na(logwmhv2)) %>% 
+  ggplot(aes(as.numeric(logwmhv2))) + 
+  geom_density(kernel="gaussian") 
+
+# fa_cing_1
+summary(aim2_final_frs$fa_cing_1)
+aim2_final_frs %>%
+  filter(!is.na(fa_cing_1)) %>% 
+  ggplot(aes(as.numeric(fa_cing_1))) + 
+  geom_density(kernel="gaussian") 
+
+# md_cing_1
+summary(aim2_final_frs$md_cing_1)
+aim2_final_frs %>%
+  filter(!is.na(md_cing_1)) %>% 
+  ggplot(aes(as.numeric(md_cing_1))) + 
+  geom_density(kernel="gaussian") 
+
+# fa_unc_1
+summary(aim2_final_frs$fa_unc_1)
+aim2_final_frs %>%
+  filter(!is.na(fa_unc_1)) %>% 
+  ggplot(aes(as.numeric(fa_unc_1))) + 
+  geom_density(kernel="gaussian") 
+
+# md_unc_1
+summary(aim2_final_frs$md_unc_1)
+aim2_final_frs %>%
+  filter(!is.na(md_unc_1)) %>% 
+  ggplot(aes(as.numeric(md_unc_1))) + 
+  geom_density(kernel="gaussian") 
+
+# fa_cc_1
+summary(aim2_final_frs$fa_cc_1)
+aim2_final_frs %>%
+  filter(!is.na(fa_cc_1)) %>% 
+  ggplot(aes(as.numeric(fa_cc_1))) + 
+  geom_density(kernel="gaussian") 
+
+# md_cc_1
+summary(aim2_final_frs$md_cc_1)
+aim2_final_frs %>%
+  filter(!is.na(md_cc_1)) %>% 
+  ggplot(aes(as.numeric(md_cc_1))) + 
+  geom_density(kernel="gaussian") 
+
+# microhemct_1
+summary(as.factor(aim2_final_frs$microhemct_1))
+summary(as.factor(aim2$microhemct_1))
+
+# microhem_1
+summary(as.factor(aim2_final_frs$microhem_1))
+summary(as.factor(aim2$microhem_1))
+
+# lacunect_1
+summary(as.factor(aim2_final_frs$lacunect_1))
+summary(as.factor(aim2$lacunect_1))
+
+# lacune_1
+summary(as.factor(aim2_final_frs$lacune_1))
+summary(as.factor(aim2$lacune_1))
+
+# l_hippvol_1
+str(aim2_final_frs$l_hippvol_1)
+summary(aim2_final_frs$l_hippvol_1)
+summary(as.numeric(aim2$l_hippvol_1))
+
+# r_hippvol_1
+str(aim2_final_frs$r_hippvol_1)
+summary(aim2_final_frs$r_hippvol_1)
+summary(as.numeric(aim2$r_hippvol_1))
+
+# hippvolnew_1
+str(aim2_final_frs$hippvolnew_1)
+summary(aim2_final_frs$hippvolnew_1) # n miss = 538
+
+# l_hippvol_2
+str(aim2_final_frs$l_hippvol_2)
+summary(aim2_final_frs$l_hippvol_2)
+summary(as.numeric(aim2$l_hippvol_2))
+
+# r_hippvol_2
+str(aim2_final_frs$r_hippvol_2)
+summary(aim2_final_frs$r_hippvol_2)
+summary(as.numeric(aim2$r_hippvol_2))
+
+# hippvolnew_2
+str(aim2_final_frs$hippvolnew_2)
+summary(aim2_final_frs$hippvolnew_2) # n miss = 2604
+
+# apoe4_positivity
+summary(as.factor(aim2_final_frs$apoe4_positivity)) # 497 NA
+ggplot(aim2_final_frs, aes(x=as.factor(apoe4_positivity))) +
+  geom_bar() 
+
+# apoe4_genotype
+summary(as.factor(aim2_final_frs$apoe4_genotype)) # 497 NA 
+ggplot(aim2_final_frs, aes(x=as.factor(apoe4_genotype))) +
+  geom_bar() 
+
+# apoe4_rs429358
+summary(as.factor(aim2_final_frs$apoe4_rs429358)) # 497 NA 
+ggplot(aim2_final_frs, aes(x=as.factor(apoe4_rs429358))) +
+  geom_bar() 
+
+# apoe4_rs7412
+summary(as.factor(aim2_final_frs$apoe4_rs7412)) # 497 NA 
+ggplot(aim2_final_frs, aes(x=as.factor(apoe4_rs7412))) +
+  geom_bar() 
+
+save(aim2_final, file = "./aim2_final.RData") # n=3840, v=338
+```
+
